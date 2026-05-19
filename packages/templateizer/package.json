@@ -1,8 +1,8 @@
 {
-  "name": "@proxima/templateizer",
+  "name": "@proxima-io/templateizer",
   "version": "0.1.0",
   "type": "module",
-  "description": "CLI for managing Proxima website templates — scan, validate, register, deploy, publish, sync, and status.",
+  "description": "CLI for managing Proxima website templates \u2014 scan, validate, register, deploy, publish, sync, and status.",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,15 +22,19 @@
     "build": "tsc --project tsconfig.json",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "test": "vitest run",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "publish:pkg": "pnpm publish --no-git-checks"
   },
   "dependencies": {
-    "@proxima/template-schema": "workspace:*",
-    "@proxima/template-registry-client": "workspace:*"
+    "@proxima-io/template-schema": "workspace:*",
+    "@proxima-io/template-registry-client": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "typescript": "^5.7.2",
-    "vitest": "^3.2.4"
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

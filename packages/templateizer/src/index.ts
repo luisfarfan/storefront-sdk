@@ -2,8 +2,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { TemplateRegistryClient, type WebsiteTemplateRecord } from "@proxima/template-registry-client";
-import { parseTemplateManifest, validateTemplateManifest, type TemplateManifest } from "@proxima/template-schema";
+import { TemplateRegistryClient, type WebsiteTemplateRecord } from "@proxima-io/template-registry-client";
+import { parseTemplateManifest, validateTemplateManifest, type TemplateManifest } from "@proxima-io/template-schema";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -55,7 +55,7 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     return statusTemplateCommand(targetPath, argv.slice(2));
   }
   if (command === "preview") {
-    console.log("Run preview with: pnpm --filter @proxima/catalog-preview dev");
+    console.log("Run preview with: pnpm --filter @proxima-io/catalog-preview dev");
     console.log(`Template target: ${targetPath}`);
     return 0;
   }

@@ -1,4 +1,4 @@
-import { isCmsPreview } from './cms-preview';
+import { isCmsPreview } from './cms-preview.js';
 
 export type CmsTenantIds = {
   websiteId: string;

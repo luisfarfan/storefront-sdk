@@ -3,7 +3,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**", "src/**"]
     },
     "test": {
       "dependsOn": ["^build"],
@@ -18,6 +18,10 @@
       "outputs": []
     },
     "clean": {
+      "cache": false
+    },
+    "publish:pkg": {
+      "dependsOn": ["build"],
       "cache": false
     }
   }

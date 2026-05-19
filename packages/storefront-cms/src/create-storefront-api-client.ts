@@ -1,4 +1,4 @@
-import type { CmsTenantIds } from './resolve-cms-tenant';
+import type { CmsTenantIds } from './resolve-cms-tenant.js';
 
 export type StorefrontApiClientOptions = {
   baseUrl: string;
