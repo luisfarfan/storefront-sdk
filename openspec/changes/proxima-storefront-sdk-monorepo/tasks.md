@@ -1,20 +1,20 @@
 ## 1. Scaffold del monorepo
 
-- [ ] 1.1 Crear `package.json` raíz con `packageManager: pnpm@10`, workspaces `packages/*`, y scripts `build`, `test`, `typecheck`
-- [ ] 1.2 Crear `pnpm-workspace.yaml` declarando `packages: ["packages/*"]`
-- [ ] 1.3 Crear `turbo.json` con tasks `build`, `test`, `typecheck` con `dependsOn: ["^build"]` y outputs `dist/**`
-- [ ] 1.4 Crear `tsconfig.base.json` raíz con `strict: true`, `moduleResolution: bundler`, `target: ES2022`, `module: ESNext`
-- [ ] 1.5 Crear `.gitignore` con `node_modules`, `dist`, `.turbo`, `.proxima/registry`
-- [ ] 1.6 Inicializar git y hacer commit inicial
+- [x] 1.1 Crear `package.json` raíz con `packageManager: pnpm@10`, workspaces `packages/*`, y scripts `build`, `test`, `typecheck`
+- [x] 1.2 Crear `pnpm-workspace.yaml` declarando `packages: ["packages/*"]`
+- [x] 1.3 Crear `turbo.json` con tasks `build`, `test`, `typecheck` con `dependsOn: ["^build"]` y outputs `dist/**`
+- [x] 1.4 Crear `tsconfig.base.json` raíz con `strict: true`, `moduleResolution: bundler`, `target: ES2022`, `module: ESNext`
+- [x] 1.5 Crear `.gitignore` con `node_modules`, `dist`, `.turbo`, `.proxima/registry`
+- [x] 1.6 Inicializar git y hacer commit inicial
 
 ## 2. Paquete @proxima/storefront-cms
 
-- [ ] 2.1 Crear `packages/storefront-cms/` con `package.json` (`@proxima/storefront-cms`, `version: 0.1.0`, exports, peerDeps: none)
-- [ ] 2.2 Crear `tsconfig.json` extendiendo el base raíz
-- [ ] 2.3 Copiar y consolidar el código fuente desde `proxima-214store/packages/storefront-cms/src/` (versión más completa: `cms-preview.ts`, `create-storefront-api-client.ts`, `resolve-cms-tenant.ts`, `merge-product-item-overrides.ts`)
-- [ ] 2.4 Crear `src/index.ts` exportando todos los módulos
-- [ ] 2.5 Crear tests en `test/` para `normalizeCmsSection`, `isCmsPreview`, `resolveCmsTenantFromUrl`, `createStorefrontApiClient`
-- [ ] 2.6 Verificar que `pnpm build` y `pnpm test` pasan en el paquete
+- [x] 2.1 Crear `packages/storefront-cms/` con `package.json` (`@proxima/storefront-cms`, `version: 0.1.0`, exports, peerDeps: none)
+- [x] 2.2 Crear `tsconfig.json` extendiendo el base raíz
+- [x] 2.3 Copiar y consolidar el código fuente desde `proxima-214store/packages/storefront-cms/src/` (versión más completa: `cms-preview.ts`, `create-storefront-api-client.ts`, `resolve-cms-tenant.ts`, `merge-product-item-overrides.ts`)
+- [x] 2.4 Crear `src/index.ts` exportando todos los módulos
+- [x] 2.5 Crear tests en `test/` para `normalizeCmsSection`, `isCmsPreview`, `resolveCmsTenantFromUrl`, `createStorefrontApiClient`
+- [x] 2.6 Verificar que `pnpm build` y `pnpm test` pasan en el paquete
 
 ## 3. Paquete @proxima/storefront-core
 

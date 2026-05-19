@@ -1,0 +1,29 @@
+{
+  "name": "@proxima/storefront-cms",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "CMS composition utilities for Proxima storefronts — normalization, tenant resolution, preview detection, and API client factory.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}
