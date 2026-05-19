@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.turbo/
+.proxima/registry/
+
+# pnpm
+.pnpm-store/
+
+# TypeScript
+*.tsbuildinfo
+
+# OS
+.DS_Store
