@@ -1,0 +1,40 @@
+---
+interface Props {
+  enabled?: boolean;
+  pageId?: number | string | null;
+  sectionId?: number | string | null;
+  sectionType?: string | null;
+  sectionName?: string | null;
+  as?: 'section' | 'div' | 'article' | 'aside' | 'header' | 'footer' | 'main';
+  class?: string;
+}
+
+const {
+  enabled = false,
+  pageId = null,
+  sectionId = null,
+  sectionType = null,
+  sectionName = null,
+  as = 'section',
+  class: className = '',
+} = Astro.props;
+
+const Tag = as;
+const label = sectionName || sectionType || '';
+---
+
+{enabled && sectionId ? (
+  <Tag
+    class={className}
+    data-cms-editable="true"
+    data-cms-page-id={pageId != null ? String(pageId) : undefined}
+    data-cms-section-id={String(sectionId)}
+    data-cms-section-type={sectionType || undefined}
+    data-cms-section-name={sectionName || undefined}
+    data-cms-label={label || undefined}
+  >
+    <slot />
+  </Tag>
+) : (
+  <slot />
+)}

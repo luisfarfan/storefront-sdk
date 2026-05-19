@@ -1,0 +1,669 @@
+---
+interface Props {
+  enabled?: boolean;
+  path: string;
+  lang: string;
+}
+
+const { enabled = false, path, lang } = Astro.props;
+const builderOrigin = Astro.url.searchParams.get('builder_origin') || import.meta.env.PUBLIC_BUILDER_ORIGIN || '';
+const readyPayload = JSON.stringify({
+  path,
+  lang,
+  preview: enabled,
+});
+---
+
+{enabled ? (
+  <script is:inline define:vars={{ readyPayload, builderOrigin }}>
+    (() => {
+      const READY_PAYLOAD = JSON.parse(readyPayload);
+      const CONFIGURED_BUILDER_ORIGIN = typeof builderOrigin === 'string' ? builderOrigin : '';
+      let selectedSection = null;
+      let highlightedSection = null;
+      let highlightedAttribute = null;
+      let highlightedAttributePulseTimeout = null;
+      /** Resaltado temporal desde el árbol "Páginas" del builder (parent → iframe). */
+      let treeHoverSection = null;
+      const draftAttributeState = new Map();
+      const modeParam = new URLSearchParams(window.location.search).get('cms_preview_mode');
+      let previewMode = modeParam === 'navigate' || modeParam === 'edit' ? modeParam : 'edit';
+
+      const COMPLEX_TYPES = ['array', 'object', 'smart_collection_id'];
+      const ATOMIC_TYPES = ['text', 'rich_text', 'image', 'video', 'boolean', 'number', 'color', 'url', 'date'];
+
+      const resolveOrigin = (value) => {
+        if (!value) return null;
+        try {
+          return new URL(value).origin;
+        } catch (_) {
+          return null;
+        }
+      };
+
+      const builderTargetOrigin =
+        resolveOrigin(new URLSearchParams(window.location.search).get('builder_origin')) ||
+        resolveOrigin(CONFIGURED_BUILDER_ORIGIN) ||
+        resolveOrigin(document.referrer) ||
+        null;
+
+      const send = (type, payload) => {
+        if (window.parent && window.parent !== window && builderTargetOrigin) {
+          window.parent.postMessage({ type, payload }, builderTargetOrigin);
+        }
+      };
+
+      const withBody = (callback) => {
+        if (document.body) {
+          callback(document.body);
+          return;
+        }
+        document.addEventListener(
+          'DOMContentLoaded',
+          () => {
+            if (document.body) callback(document.body);
+          },
+          { once: true },
+        );
+      };
+
+      const applyPreviewMode = (mode) => {
+        previewMode = mode === 'navigate' ? 'navigate' : 'edit';
+        withBody((body) => {
+          body.dataset.cmsPreviewMode = previewMode;
+        });
+        send('cms:mode-change', { mode: previewMode });
+      };
+
+      /** Matches builder `PreviewBridgeService.sendSetContentZoom` clamp (0.05–1). */
+      const applyContentZoom = (rawScale) => {
+        const root = document.documentElement;
+        let s = typeof rawScale === 'number' && Number.isFinite(rawScale) ? rawScale : 1;
+        s = Math.min(1, Math.max(0.05, s));
+        if (s >= 0.999) {
+          root.style.removeProperty('transform');
+          root.style.removeProperty('transform-origin');
+          root.style.removeProperty('width');
+          root.style.removeProperty('min-height');
+          return;
+        }
+        root.style.transformOrigin = '0 0';
+        root.style.transform = `scale(${s})`;
+        root.style.width = `${100 / s}%`;
+        root.style.minHeight = `calc(100vh / ${s})`;
+      };
+
+      const isEditable = (element) =>
+        element instanceof Element &&
+        element.matches('[data-cms-editable="true"]');
+
+      const getEditableSection = (target) => {
+        if (!(target instanceof Element)) return null;
+        return target.closest('[data-cms-editable="true"]');
+      };
+
+      const readPageIdDataset = (raw) => {
+        if (raw == null || raw === '') return null;
+        const n = Number(raw);
+        if (Number.isFinite(n)) return n;
+        return raw;
+      };
+
+      const getSectionPayload = (element) => {
+        if (!isEditable(element)) return null;
+        let pageId = readPageIdDataset(element.dataset.cmsPageId);
+        if (pageId == null && document.body) {
+          pageId = readPageIdDataset(document.body.dataset.cmsPageId);
+        }
+        return {
+          pageId,
+          sectionId: element.dataset.cmsSectionId ? Number(element.dataset.cmsSectionId) : null,
+          sectionType: element.dataset.cmsSectionType || null,
+          sectionName: element.dataset.cmsSectionName || null,
+        };
+      };
+
+      const getAttributePayload = (element) => {
+        if (!(element instanceof Element)) return null;
+        const attributeNode = element.closest('[data-cms-attribute]');
+        if (!(attributeNode instanceof Element)) return null;
+        const attributeKey = attributeNode.dataset.cmsAttributeKey || attributeNode.dataset.cmsAttribute || null;
+        return {
+          attributeKey,
+          attributeName: attributeKey,
+          attributeType: attributeNode.dataset.cmsAttributeType || null,
+          attributeLabel: attributeNode.dataset.cmsAttributeLabel || null,
+        };
+      };
+
+      const getAttributeElement = (element) => {
+        if (!(element instanceof Element)) return null;
+        return element.closest('[data-cms-attribute]');
+      };
+
+      const getComplexAttributeAncestor = (element) => {
+        if (!(element instanceof Element)) return null;
+        let current = element.parentElement;
+        while (current) {
+          if (current.hasAttribute('data-cms-attribute')) {
+            const type = current.getAttribute('data-cms-attribute-type');
+            if (COMPLEX_TYPES.includes(type)) return current;
+          }
+          if (current.hasAttribute('data-cms-editable')) break;
+          current = current.parentElement;
+        }
+        return null;
+      };
+
+      const getItemPayload = (element) => {
+        if (!(element instanceof Element)) return null;
+        const itemNode = element.closest('[data-cms-item="true"]');
+        if (!(itemNode instanceof Element)) return null;
+        return {
+          itemType: itemNode.dataset.cmsItemType || null,
+          itemIndex: itemNode.dataset.cmsItemIndex != null ? Number(itemNode.dataset.cmsItemIndex) : null,
+          itemKey: itemNode.dataset.cmsItemKey || null,
+          itemLabel: itemNode.dataset.cmsItemLabel || null,
+        };
+      };
+
+      const getAnchorRectInParentViewport = (element) => {
+        if (!(element instanceof Element)) return null;
+        const frameElement = window.frameElement;
+        if (!(frameElement instanceof Element)) return null;
+
+        const elementRect = element.getBoundingClientRect();
+        const frameRect = frameElement.getBoundingClientRect();
+
+        return {
+          left: elementRect.left + frameRect.left,
+          top: elementRect.top + frameRect.top,
+          width: elementRect.width,
+          height: elementRect.height,
+        };
+      };
+
+      const markSelected = (element) => {
+        if (selectedSection && selectedSection !== element) {
+          selectedSection.removeAttribute('data-cms-selected');
+        }
+        selectedSection = element;
+        if (selectedSection) {
+          selectedSection.setAttribute('data-cms-selected', 'true');
+        }
+      };
+
+      const clearHighlight = () => {
+        if (highlightedSection) {
+          highlightedSection.removeAttribute('data-cms-highlighted');
+          highlightedSection = null;
+        }
+        if (highlightedAttribute) {
+          highlightedAttribute.removeAttribute('data-cms-attribute-highlighted');
+          highlightedAttribute.removeAttribute('data-cms-attribute-pulse');
+          highlightedAttribute = null;
+        }
+        if (highlightedAttributePulseTimeout) {
+          window.clearTimeout(highlightedAttributePulseTimeout);
+          highlightedAttributePulseTimeout = null;
+        }
+      };
+
+      const clearTreeHoverSection = () => {
+        if (treeHoverSection) {
+          treeHoverSection.removeAttribute('data-cms-tree-hover');
+          treeHoverSection = null;
+        }
+      };
+
+      const setTreeHoverSection = (rawSectionId) => {
+        clearTreeHoverSection();
+        const sid = rawSectionId != null && rawSectionId !== '' ? Number(rawSectionId) : null;
+        if (sid == null || !Number.isFinite(sid)) return;
+        const el = document.querySelector(`[data-cms-section-id="${String(sid)}"]`);
+        if (!(el instanceof Element)) return;
+        treeHoverSection = el;
+        el.setAttribute('data-cms-tree-hover', 'true');
+        const reduceMotion =
+          typeof window.matchMedia === 'function' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        try {
+          el.scrollIntoView({
+            behavior: reduceMotion ? 'auto' : 'smooth',
+            block: 'nearest',
+            inline: 'nearest',
+          });
+        } catch (_) {
+          el.scrollIntoView();
+        }
+      };
+
+      const readAttributeKey = (element) => {
+        if (!(element instanceof Element)) return null;
+        return element.dataset.cmsAttributeKey || element.dataset.cmsAttribute || null;
+      };
+
+      const cloneValue = (value) => {
+        if (value == null) return value;
+        if (typeof structuredClone === 'function') {
+          return structuredClone(value);
+        }
+        try {
+          return JSON.parse(JSON.stringify(value));
+        } catch (_) {
+          return value;
+        }
+      };
+
+      const normalizeDraftChanges = (rawChanges) => {
+        if (!Array.isArray(rawChanges)) return [];
+        return rawChanges
+          .map((entry) => {
+            if (!entry || typeof entry !== 'object') return null;
+            const attributeKey = entry.attributeKey ?? entry.attribute_key ?? entry.attributeName ?? entry.attribute_name ?? null;
+            if (attributeKey == null || attributeKey === '') return null;
+            return {
+              attributeKey: String(attributeKey),
+              value: cloneValue(entry.value),
+            };
+          })
+          .filter(Boolean);
+      };
+
+      const readLinkTextNode = (node) => {
+        const candidates = Array.from(node.childNodes || []).filter((child) => child.nodeType === Node.TEXT_NODE);
+        return candidates.find((child) => String(child.textContent || '').trim()) || null;
+      };
+
+      const setNodeText = (node, value) => {
+        const next = value == null ? '' : String(value);
+        if (node.tagName === 'INPUT' || node.tagName === 'TEXTAREA') {
+          node.value = next;
+          return true;
+        }
+        if (node.tagName === 'IMG') {
+          node.setAttribute('alt', next);
+          return true;
+        }
+        if (node.tagName === 'A') {
+          const textNode = readLinkTextNode(node);
+          if (textNode) {
+            textNode.textContent = next;
+          } else {
+            node.textContent = next;
+          }
+          return true;
+        }
+        node.textContent = next;
+        return true;
+      };
+
+      const setNodeBoolean = (node, value) => {
+        const boolValue = Boolean(value);
+        node.dataset.cmsDraftValue = boolValue ? 'true' : 'false';
+        if (node.tagName === 'INPUT') {
+          node.checked = boolValue;
+          return true;
+        }
+        node.setAttribute('aria-pressed', boolValue ? 'true' : 'false');
+        return true;
+      };
+
+      const setNodeNumber = (node, value) => {
+        const next = value == null ? '' : String(value);
+        if (node.tagName === 'INPUT') {
+          node.value = next;
+          return true;
+        }
+        node.textContent = next;
+        return true;
+      };
+
+      const setNodeLink = (node, value) => {
+        if (!value || typeof value !== 'object') return false;
+        const href = typeof value.href === 'string' ? value.href : null;
+        const label = typeof value.label === 'string' ? value.label : null;
+        const isExternal = value.is_external === true || value.isExternal === true;
+        if (href && node.tagName === 'A') {
+          node.setAttribute('href', href);
+        }
+        if (label) {
+          setNodeText(node, label);
+        }
+        if (node.tagName === 'A') {
+          if (isExternal) {
+            node.setAttribute('target', '_blank');
+          } else {
+            node.removeAttribute('target');
+          }
+        }
+        return Boolean(href || label);
+      };
+
+      const setNodeImage = (node, value) => {
+        const src = typeof value === 'string'
+          ? value
+          : value && typeof value === 'object' && typeof value.src === 'string'
+            ? value.src
+            : null;
+        if (!src) return false;
+        if (node.tagName === 'IMG') {
+          node.setAttribute('src', src);
+          const alt = value && typeof value === 'object' && typeof value.alt === 'string' ? value.alt : null;
+          if (alt) node.setAttribute('alt', alt);
+          return true;
+        }
+        node.style.backgroundImage = `url(${JSON.stringify(src).slice(1, -1)})`;
+        return true;
+      };
+
+      const applyDraftToNode = (node, draftEntry) => {
+        if (!(node instanceof Element) || !draftEntry) return false;
+        const attributeType = node.dataset.cmsAttributeType || null;
+        const value = draftEntry.value;
+        let applied = false;
+
+        switch (attributeType) {
+          case 'text':
+          case 'rich_text':
+            applied = setNodeText(node, value);
+            break;
+          case 'number':
+            applied = setNodeNumber(node, value);
+            break;
+          case 'boolean':
+            applied = setNodeBoolean(node, value);
+            break;
+          case 'link':
+            applied = setNodeLink(node, value);
+            break;
+          case 'image':
+            applied = setNodeImage(node, value);
+            break;
+          default:
+            if (typeof value === 'string' || typeof value === 'number') {
+              applied = setNodeText(node, value);
+            }
+            break;
+        }
+
+        if (applied) {
+          node.setAttribute('data-cms-draft-applied', 'true');
+          node.dataset.cmsDraftAttributeKey = String(draftEntry.attributeKey);
+        }
+        return applied;
+      };
+
+      const applyDraftState = () => {
+        document.querySelectorAll('[data-cms-attribute-key], [data-cms-attribute]').forEach((node) => {
+          if (!(node instanceof Element)) return;
+          const attributeKey = readAttributeKey(node);
+          if (attributeKey == null) return;
+          const draftEntry = draftAttributeState.get(attributeKey);
+          if (draftEntry) {
+            applyDraftToNode(node, draftEntry);
+          } else {
+            node.removeAttribute('data-cms-draft-applied');
+            delete node.dataset.cmsDraftAttributeKey;
+          }
+        });
+      };
+
+      const replaceDraftState = (changes) => {
+        draftAttributeState.clear();
+        normalizeDraftChanges(changes).forEach((entry) => {
+          draftAttributeState.set(entry.attributeKey, entry);
+        });
+        applyDraftState();
+        send('cms:draft-applied', { count: draftAttributeState.size });
+      };
+
+      const mergeDraftState = (changes) => {
+        let dirty = false;
+        normalizeDraftChanges(changes).forEach((entry) => {
+          draftAttributeState.set(entry.attributeKey, entry);
+          dirty = true;
+        });
+        if (dirty) {
+          applyDraftState();
+          send('cms:draft-applied', { count: draftAttributeState.size });
+        }
+      };
+
+      const clearDraftState = (attributeKeys = null) => {
+        if (Array.isArray(attributeKeys) && attributeKeys.length > 0) {
+          attributeKeys.forEach((key) => {
+            if (key != null && key !== '') draftAttributeState.delete(String(key));
+          });
+        } else {
+          draftAttributeState.clear();
+        }
+        applyDraftState();
+        send('cms:draft-cleared', { count: draftAttributeState.size });
+      };
+
+      const setHighlightById = (sectionId, attributeKey = null) => {
+        clearTreeHoverSection();
+        clearHighlight();
+        if (sectionId == null) return;
+        highlightedSection = document.querySelector(
+          `[data-cms-section-id="${String(sectionId)}"]`,
+        );
+        if (highlightedSection) {
+          highlightedSection.setAttribute('data-cms-highlighted', 'true');
+          if (attributeKey != null) {
+            highlightedAttribute = highlightedSection.querySelector(
+              `[data-cms-attribute-key="${String(attributeKey)}"], [data-cms-attribute="${String(attributeKey)}"]`,
+            );
+            if (highlightedAttribute instanceof Element) {
+              highlightedAttribute.setAttribute('data-cms-attribute-highlighted', 'true');
+              highlightedAttribute.setAttribute('data-cms-attribute-pulse', 'true');
+              highlightedAttribute.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+                inline: 'nearest',
+              });
+              highlightedAttributePulseTimeout = window.setTimeout(() => {
+                highlightedAttribute?.removeAttribute('data-cms-attribute-pulse');
+                highlightedAttributePulseTimeout = null;
+              }, 1600);
+            }
+          }
+        }
+      };
+
+      const isInternalHref = (href) => {
+        if (!href) return false;
+        if (href.startsWith('#')) return false;
+        return href.startsWith('/') || href.startsWith(window.location.origin);
+      };
+
+      const onClick = (event) => {
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+
+        const section = getEditableSection(target);
+        const attributeElement = getAttributeElement(target);
+        const complexAncestor = getComplexAttributeAncestor(target);
+
+        // Rule: If we are inside a complex attribute (array/object), we prioritize selecting that attribute
+        // unless we explicitly clicked on an atomic attribute (text, image, etc).
+        const activeAttributeElement = attributeElement;
+        const activeAttributePayload = getAttributePayload(activeAttributeElement);
+        const isAtomic = ATOMIC_TYPES.includes(activeAttributePayload?.attributeType);
+
+        const effectiveAttributeElement = (!isAtomic && complexAncestor) ? complexAncestor : activeAttributeElement;
+        const effectiveAttributePayload = getAttributePayload(effectiveAttributeElement);
+        
+        const anchorElement = effectiveAttributeElement || section;
+        const anchorInParentViewport = getAnchorRectInParentViewport(anchorElement);
+        
+        const anchor = target.closest('a[href]');
+        const itemPayload = getItemPayload(target);
+
+        if (previewMode === 'navigate') {
+          if (anchor && isInternalHref(anchor.getAttribute('href') || '')) {
+            send('cms:navigate-request', {
+              href: anchor.getAttribute('href'),
+            });
+          }
+          return;
+        }
+
+        if (anchor && isInternalHref(anchor.getAttribute('href') || '')) {
+          event.preventDefault();
+          event.stopPropagation();
+
+          if (section) {
+            const payload = getSectionPayload(section);
+            if (payload) {
+              markSelected(section);
+              if (effectiveAttributePayload?.attributeName) {
+                // If we selected a complex attribute, we usually don't want to send specific item indexes
+                // unless the parent admin expects it. For now, following the user's request to "highlight the whole component".
+                const isComplex = COMPLEX_TYPES.includes(effectiveAttributePayload.attributeType);
+                send('cms:select-attribute', {
+                  ...payload,
+                  ...(!isComplex ? (itemPayload || {}) : {}),
+                  ...effectiveAttributePayload,
+                  anchorInParentViewport,
+                });
+              } else if (itemPayload?.itemType || itemPayload?.itemIndex != null || itemPayload?.itemKey) {
+                send('cms:select-item', {
+                  ...payload,
+                  ...itemPayload,
+                  anchorInParentViewport,
+                });
+              } else {
+                send('cms:select-section', {
+                  ...payload,
+                  anchorInParentViewport,
+                });
+              }
+            }
+          }
+
+          send('cms:navigate-request', {
+            href: anchor.getAttribute('href'),
+          });
+          return;
+        }
+
+        if (!section) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const payload = getSectionPayload(section);
+        if (!payload) return;
+
+        markSelected(section);
+        if (effectiveAttributePayload?.attributeName) {
+          const isComplex = COMPLEX_TYPES.includes(effectiveAttributePayload.attributeType);
+          send('cms:select-attribute', {
+            ...payload,
+            ...(!isComplex ? (itemPayload || {}) : {}),
+            ...effectiveAttributePayload,
+            anchorInParentViewport,
+          });
+          return;
+        }
+
+        if (itemPayload?.itemType || itemPayload?.itemIndex != null || itemPayload?.itemKey) {
+          send('cms:select-item', {
+            ...payload,
+            ...itemPayload,
+            anchorInParentViewport,
+          });
+          return;
+        }
+
+        send('cms:select-section', {
+          ...payload,
+          anchorInParentViewport,
+        });
+      };
+
+      const onMouseOver = (event) => {
+        if (previewMode !== 'edit') return;
+        const section = getEditableSection(event.target);
+        const payload = getSectionPayload(section);
+        if (!payload?.sectionId) return;
+        send('cms:hover-section', { sectionId: payload.sectionId });
+      };
+
+      const onMessage = (event) => {
+        const fromParent = event.source === window.parent && window.parent !== window;
+        if (!fromParent) return;
+        if (builderTargetOrigin && event.origin !== builderTargetOrigin) return;
+        const data = event.data;
+        if (!data || typeof data !== 'object') return;
+
+        if (data.type === 'cms:set-highlight') {
+          setHighlightById(
+            data.payload?.sectionId ?? null,
+            data.payload?.attributeKey ?? data.payload?.attributeName ?? null,
+          );
+        }
+
+        if (data.type === 'cms:clear-highlight') {
+          clearHighlight();
+        }
+
+        if (data.type === 'cms:set-tree-hover-section') {
+          setTreeHoverSection(data.payload?.sectionId);
+        }
+
+        if (data.type === 'cms:clear-tree-hover-section') {
+          clearTreeHoverSection();
+        }
+
+        if (data.type === 'cms:set-mode') {
+          applyPreviewMode(data.payload?.mode);
+        }
+
+        if (data.type === 'cms:set-content-zoom') {
+          applyContentZoom(data.payload?.scale);
+        }
+
+        if (data.type === 'cms:apply-draft') {
+          mergeDraftState(data.payload?.changes);
+        }
+
+        if (data.type === 'cms:replace-draft-state') {
+          replaceDraftState(data.payload?.changes);
+        }
+
+        if (data.type === 'cms:clear-draft') {
+          clearDraftState(data.payload?.attributeKeys ?? null);
+        }
+
+        if (data.type === 'cms:refresh-preview') {
+          window.location.reload();
+        }
+      };
+
+      const notifyReady = () => {
+        send('cms:ready', {
+          ...READY_PAYLOAD,
+          mode: previewMode,
+          targetOrigin: builderTargetOrigin,
+          draftSupport: {
+            supported: true,
+            applyStrategy: 'dom-patch',
+            supportedAttributeTypes: ['text', 'rich_text', 'number', 'boolean', 'link', 'image'],
+            unsupportedAttributeTypes: ['object', 'array', 'smart_collection_id'],
+          },
+        });
+      };
+
+      applyPreviewMode(previewMode);
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('mouseover', onMouseOver, true);
+      window.addEventListener('message', onMessage);
+      window.addEventListener('load', notifyReady);
+      document.addEventListener('astro:page-load', notifyReady);
+      notifyReady();
+    })();
+  </script>
+) : null}

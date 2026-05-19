@@ -1,0 +1,44 @@
+---
+interface Props {
+  enabled?: boolean;
+  name?: string | null;
+  attributeKey?: string | null;
+  type?: string | null;
+  label?: string | null;
+  as?: 'div' | 'span' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'section' | 'article' | 'a';
+  class?: string;
+  href?: string;
+}
+
+const {
+  enabled = false,
+  name = null,
+  attributeKey = null,
+  type = null,
+  label = null,
+  as = 'div',
+  class: className = '',
+  href,
+} = Astro.props;
+
+const Tag = as;
+const key = attributeKey || name;
+const displayLabel = label || key || '';
+---
+
+{enabled && key ? (
+  <Tag
+    class={className}
+    href={href}
+    data-cms-attribute={key}
+    data-cms-attribute-key={key}
+    data-cms-attribute-type={type || undefined}
+    data-cms-attribute-label={displayLabel || undefined}
+  >
+    <slot />
+  </Tag>
+) : (
+  <Tag class={className} href={href}>
+    <slot />
+  </Tag>
+)}

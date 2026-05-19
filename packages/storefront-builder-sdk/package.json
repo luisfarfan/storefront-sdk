@@ -1,0 +1,42 @@
+{
+  "name": "@proxima/storefront-builder-sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Proxima Builder iframe bridge and editable component wrappers for Astro storefronts.",
+  "license": "MIT",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "import": "./src/index.ts",
+      "types": "./src/index.ts"
+    },
+    "./CmsPreviewBridge.astro": "./src/CmsPreviewBridge.astro",
+    "./EditableSection.astro": "./src/EditableSection.astro",
+    "./EditableAttribute.astro": "./src/EditableAttribute.astro",
+    "./EditableItem.astro": "./src/EditableItem.astro",
+    "./preview.css": "./src/preview.css"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json --noEmit",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "echo 'nothing to clean'"
+  },
+  "peerDependencies": {
+    "astro": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "astro": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

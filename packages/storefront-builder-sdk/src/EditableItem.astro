@@ -1,0 +1,46 @@
+---
+interface Props {
+  enabled?: boolean;
+  itemType?: string | null;
+  itemIndex?: number | string | null;
+  itemKey?: string | null;
+  itemLabel?: string | null;
+  as?: 'div' | 'li' | 'article' | 'span' | 'a';
+  class?: string;
+  href?: string;
+}
+
+const {
+  enabled = false,
+  itemType = null,
+  itemIndex = null,
+  itemKey = null,
+  itemLabel = null,
+  as = 'div',
+  class: className = '',
+  href,
+  ...rest
+} = Astro.props;
+
+const Tag = as;
+const label = itemLabel || itemType || '';
+---
+
+{enabled ? (
+  <Tag
+    class={className}
+    href={href}
+    {...rest}
+    data-cms-item="true"
+    data-cms-item-type={itemType || undefined}
+    data-cms-item-index={itemIndex != null ? String(itemIndex) : undefined}
+    data-cms-item-key={itemKey || undefined}
+    data-cms-item-label={label || undefined}
+  >
+    <slot />
+  </Tag>
+) : (
+  <Tag class={className} href={href} {...rest}>
+    <slot />
+  </Tag>
+)}
