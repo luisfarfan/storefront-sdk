@@ -686,3 +686,180 @@ export async function processDeleteAddress(
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
   return deleteCustomerAddress({ baseUrl: env.apiUrl }, website, params);
 }
+
+// ---------------------------------------------------------------------------
+// Storefront Analytics
+//
+// Client-side event tracking for the Proxima analytics ingest endpoint.
+// Endpoint: POST /api/v1/store/events  (X-Business-ID header required)
+//
+// Usage — in SiteLayout.astro <script> tag:
+//   import { analytics } from '@proxima-io/storefront-core';
+//   analytics.init({ apiUrl, websiteId, businessId, locale });
+//   // page_view fires automatically on astro:page-load
+//
+// Manual tracking:
+//   analytics.track('product_view', { product_slug: 'titan-mx-pro' });
+//   analytics.track('add_to_cart', { product_slug, variant_id, price });
+//   analytics.track('order_completed', { order_id, order_total });
+//   analytics.track('search', { query, results_count });
+// ---------------------------------------------------------------------------
+
+export type StorefrontEventType =
+  | 'page_view'
+  | 'product_view'
+  | 'add_to_cart'
+  | 'order_completed'
+  | 'search';
+
+export interface StorefrontEventPayload {
+  /** Product slug or ID, for product_view / add_to_cart */
+  product_slug?: string;
+  product_id?: string;
+  product_name?: string;
+  /** Variant ID for add_to_cart */
+  variant_id?: number;
+  quantity?: number;
+  price?: number;
+  /** Order ID and total for order_completed */
+  order_id?: string;
+  order_total?: number;
+  /** Search term and result count for search */
+  query?: string;
+  results_count?: number;
+  /** Arbitrary extras */
+  [key: string]: unknown;
+}
+
+export interface StorefrontAnalyticsConfig {
+  /** Base URL of the Proxima API (e.g. http://localhost:8000) */
+  apiUrl: string;
+  /** website.id UUID */
+  websiteId: string;
+  /** website.business_id UUID — sent as X-Business-ID */
+  businessId: string;
+  /** ISO locale code, e.g. "es" */
+  locale?: string;
+  /** How often (ms) to flush the event queue. Default: 3000 */
+  flushInterval?: number;
+  /** Log events to console. Default: false */
+  debug?: boolean;
+}
+
+interface QueuedEvent {
+  event_type: StorefrontEventType;
+  occurred_at: string;
+  website_id: string;
+  path: string;
+  referrer?: string;
+  locale?: string;
+  payload: StorefrontEventPayload;
+}
+
+class ProximaAnalytics {
+  private config: StorefrontAnalyticsConfig | null = null;
+  private queue: QueuedEvent[] = [];
+  /** Events queued before init() is called — replayed once config is set. */
+  private preInitQueue: Array<[StorefrontEventType, StorefrontEventPayload]> = [];
+  private timer: ReturnType<typeof setInterval> | null = null;
+  private initialized = false;
+
+  /**
+   * Initialize the analytics client. Call once from SiteLayout.
+   * Automatically starts listening for Astro page transitions and
+   * fires a page_view event on each navigation.
+   * Any events queued before init() is replayed immediately.
+   */
+  init(config: StorefrontAnalyticsConfig): void {
+    if (typeof window === 'undefined') return; // SSR guard
+    this.config = config;
+    if (this.initialized) return;
+    this.initialized = true;
+
+    // Replay events queued before init() (e.g. product_view from a component script)
+    for (const [type, payload] of this.preInitQueue.splice(0)) {
+      this.track(type, payload);
+    }
+
+    // Auto page_view on first load and on Astro view transitions
+    const firePageView = () => this.track('page_view');
+    firePageView();
+    document.addEventListener('astro:page-load', firePageView);
+
+    // Periodic flush
+    const interval = config.flushInterval ?? 3000;
+    this.timer = setInterval(() => this.flush(), interval);
+
+    // Flush on page hide (tab close / navigate away)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') this.flush(true);
+    });
+  }
+
+  /**
+   * Queue a storefront event. Call from any client-side component.
+   * Safe to call before init() — events are replayed once the config is set.
+   * The event queue is flushed automatically every `flushInterval` ms.
+   */
+  track(type: StorefrontEventType, payload: StorefrontEventPayload = {}): void {
+    if (typeof window === 'undefined') return;
+    if (!this.config) {
+      // Store for replay after init — drop only if we're in SSR
+      this.preInitQueue.push([type, payload]);
+      return;
+    }
+    const event: QueuedEvent = {
+      event_type: type,
+      occurred_at: new Date().toISOString(),
+      website_id: this.config.websiteId,
+      path: window.location.pathname,
+      referrer: document.referrer || undefined,
+      locale: this.config.locale,
+      payload,
+    };
+    this.queue.push(event);
+    if (this.config.debug) console.debug('[proxima:analytics] queued', event);
+  }
+
+  /**
+   * Flush the current queue to the API.
+   * Pass `beacon = true` to use sendBeacon (fire-and-forget on page unload).
+   */
+  flush(beacon = false): void {
+    if (!this.config || this.queue.length === 0) return;
+    const batch = this.queue.splice(0);
+    const url = `${this.config.apiUrl}/api/v1/store/events`;
+    const body = JSON.stringify({ events: batch });
+    const headers = { 'Content-Type': 'application/json', 'X-Business-ID': this.config.businessId };
+
+    if (this.config.debug) console.debug(`[proxima:analytics] flushing ${batch.length} event(s)`);
+
+    if (beacon && typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      // sendBeacon doesn't support custom headers — wrap in a Blob
+      const blob = new Blob([body], { type: 'application/json' });
+      const sent = navigator.sendBeacon(url, blob);
+      if (!sent) {
+        // sendBeacon failed (e.g. queue full) — re-queue for next flush
+        this.queue.unshift(...batch);
+      }
+      return;
+    }
+
+    fetch(url, { method: 'POST', headers, body, keepalive: true }).catch(() => {
+      // Silent fail — analytics must never break the storefront
+    });
+  }
+
+  /** Stop the flush timer and reset state (useful in tests). */
+  destroy(): void {
+    if (this.timer !== null) clearInterval(this.timer);
+    this.timer = null;
+    this.initialized = false;
+    this.config = null;
+    this.queue = [];
+    this.preInitQueue = [];
+  }
+}
+
+/** Singleton analytics client. Import and call `analytics.init()` from SiteLayout. */
+export const analytics = new ProximaAnalytics();
