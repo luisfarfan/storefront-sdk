@@ -29,6 +29,11 @@ export interface ProximaWebsiteResponse {
   code_profile?: string | null;
   locale: string;
   currency: string;
+  // SEO / branding
+  og_image_url?: string | null;
+  logo_url?: string | null;
+  favicon_url?: string | null;
+  twitter_handle?: string | null;
   capabilities: Record<string, any>;
   theme_tokens: Record<string, any>;
   animation_config: Record<string, any>;
