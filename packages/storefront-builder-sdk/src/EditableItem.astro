@@ -1,11 +1,14 @@
 ---
+import { buildEditableItemInspectTitle } from "./inspect-meta.ts";
+
 interface Props {
   enabled?: boolean;
   itemType?: string | null;
   itemIndex?: number | string | null;
   itemKey?: string | null;
   itemLabel?: string | null;
-  as?: 'div' | 'li' | 'article' | 'span' | 'a';
+  parentAttributeKey?: string | null;
+  as?: "div" | "li" | "article" | "span" | "a";
   class?: string;
   href?: string;
 }
@@ -16,14 +19,20 @@ const {
   itemIndex = null,
   itemKey = null,
   itemLabel = null,
-  as = 'div',
-  class: className = '',
+  parentAttributeKey = null,
+  as = "div",
+  class: className = "",
   href,
   ...rest
 } = Astro.props;
 
 const Tag = as;
-const label = itemLabel || itemType || '';
+const inspectTitle = buildEditableItemInspectTitle({
+  itemLabel,
+  itemType,
+  itemIndex,
+  parentAttributeKey,
+});
 ---
 
 {enabled ? (
@@ -35,7 +44,12 @@ const label = itemLabel || itemType || '';
     data-cms-item-type={itemType || undefined}
     data-cms-item-index={itemIndex != null ? String(itemIndex) : undefined}
     data-cms-item-key={itemKey || undefined}
-    data-cms-item-label={label || undefined}
+    data-cms-item-label={itemLabel || itemType || undefined}
+    data-cms-inspect-title={inspectTitle || undefined}
+    data-cms-inspect-kind="item"
+    data-cms-editor-kind="item"
+    data-cms-editor-kind-label="Ítem"
+    data-cms-item-parent-key={parentAttributeKey || undefined}
   >
     <slot />
   </Tag>

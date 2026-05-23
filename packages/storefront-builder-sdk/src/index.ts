@@ -96,3 +96,12 @@ export function toSectionMeta(
 export function getAttributeMeta(section: CmsSectionRecord | null | undefined, name: string) {
   return (section?.attributes_meta ?? section?.attributesMeta)?.[name];
 }
+
+export {
+  buildEditableAttributeProps,
+  buildEditableItemInspectTitle,
+  buildSectionInspectTitle,
+  resolveEditorKind,
+  resolveEditorKindLabel,
+  type CmsEditorKind,
+} from "./inspect-meta.ts";

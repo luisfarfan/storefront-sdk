@@ -1,11 +1,13 @@
 ---
+import { buildSectionInspectTitle } from "./inspect-meta.ts";
+
 interface Props {
   enabled?: boolean;
   pageId?: number | string | null;
   sectionId?: number | string | null;
   sectionType?: string | null;
   sectionName?: string | null;
-  as?: 'section' | 'div' | 'article' | 'aside' | 'header' | 'footer' | 'main';
+  as?: "section" | "div" | "article" | "aside" | "header" | "footer" | "main";
   class?: string;
 }
 
@@ -15,12 +17,12 @@ const {
   sectionId = null,
   sectionType = null,
   sectionName = null,
-  as = 'section',
-  class: className = '',
+  as = "section",
+  class: className = "",
 } = Astro.props;
 
 const Tag = as;
-const label = sectionName || sectionType || '';
+const inspectTitle = buildSectionInspectTitle(sectionName, sectionType);
 ---
 
 {enabled && sectionId ? (
@@ -31,7 +33,11 @@ const label = sectionName || sectionType || '';
     data-cms-section-id={String(sectionId)}
     data-cms-section-type={sectionType || undefined}
     data-cms-section-name={sectionName || undefined}
-    data-cms-label={label || undefined}
+    data-cms-label={inspectTitle || undefined}
+    data-cms-inspect-title={inspectTitle || undefined}
+    data-cms-inspect-kind="section"
+    data-cms-editor-kind="section"
+    data-cms-editor-kind-label="Sección"
   >
     <slot />
   </Tag>

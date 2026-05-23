@@ -1,11 +1,16 @@
 ---
+import { buildEditableAttributeProps, type CmsEditorKind } from "./inspect-meta.ts";
+
 interface Props {
   enabled?: boolean;
   name?: string | null;
   attributeKey?: string | null;
   type?: string | null;
   label?: string | null;
-  as?: 'div' | 'span' | 'p' | 'h1' | 'h2' | 'h3' | 'h4' | 'section' | 'article' | 'a';
+  ui?: string | null;
+  localizable?: boolean;
+  editorKind?: CmsEditorKind | string | null;
+  as?: "div" | "span" | "p" | "h1" | "h2" | "h3" | "h4" | "section" | "article" | "a";
   class?: string;
   href?: string;
 }
@@ -16,14 +21,32 @@ const {
   attributeKey = null,
   type = null,
   label = null,
-  as = 'div',
-  class: className = '',
+  ui = null,
+  localizable = false,
+  editorKind = null,
+  as = "div",
+  class: className = "",
   href,
 } = Astro.props;
 
 const Tag = as;
-const key = attributeKey || name;
-const displayLabel = label || key || '';
+const fieldName = name ?? attributeKey ?? "field";
+const resolved = buildEditableAttributeProps(
+  { label, type, attribute_key: attributeKey, localizable },
+  fieldName,
+  {
+    label: label ?? undefined,
+    type: type ?? undefined,
+    ui: ui ?? undefined,
+    localizable,
+    attributeKey: attributeKey ?? undefined,
+  },
+);
+
+const key = attributeKey || resolved.attributeKey || fieldName;
+const kind = editorKind || resolved.editorKind;
+const inspectTitle = resolved.inspectTitle;
+const kindLabel = resolved.editorKindLabel;
 ---
 
 {enabled && key ? (
@@ -32,8 +55,14 @@ const displayLabel = label || key || '';
     href={href}
     data-cms-attribute={key}
     data-cms-attribute-key={key}
-    data-cms-attribute-type={type || undefined}
-    data-cms-attribute-label={displayLabel || undefined}
+    data-cms-attribute-type={resolved.type || undefined}
+    data-cms-attribute-label={inspectTitle || undefined}
+    data-cms-inspect-title={inspectTitle || undefined}
+    data-cms-inspect-kind="attribute"
+    data-cms-editor-kind={kind || undefined}
+    data-cms-editor-kind-label={kindLabel || undefined}
+    data-cms-attribute-ui={resolved.ui || undefined}
+    data-cms-localizable={localizable ? "true" : undefined}
   >
     <slot />
   </Tag>

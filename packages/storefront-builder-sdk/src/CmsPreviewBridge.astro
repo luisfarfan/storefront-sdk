@@ -159,11 +159,20 @@ const readyPayload = JSON.stringify({
         if (!(element instanceof Element)) return null;
         const itemNode = element.closest('[data-cms-item="true"]');
         if (!(itemNode instanceof Element)) return null;
+        const parentAttributeNode = itemNode.closest('[data-cms-attribute]');
+        const parentAttributeKey =
+          parentAttributeNode instanceof Element
+            ? parentAttributeNode.dataset.cmsAttributeKey ||
+              parentAttributeNode.dataset.cmsAttribute ||
+              null
+            : null;
         return {
           itemType: itemNode.dataset.cmsItemType || null,
           itemIndex: itemNode.dataset.cmsItemIndex != null ? Number(itemNode.dataset.cmsItemIndex) : null,
           itemKey: itemNode.dataset.cmsItemKey || null,
           itemLabel: itemNode.dataset.cmsItemLabel || null,
+          parentAttributeKey,
+          parent_attribute_key: parentAttributeKey,
         };
       };
 
@@ -640,6 +649,13 @@ const readyPayload = JSON.stringify({
 
         if (data.type === 'cms:refresh-preview') {
           window.location.reload();
+        }
+
+        if (data.type === 'cms:set-inspect-labels') {
+          const mode = data.payload?.mode === 'all' ? 'all' : 'hover';
+          withBody((body) => {
+            body.dataset.cmsInspectLabels = mode;
+          });
         }
       };
 

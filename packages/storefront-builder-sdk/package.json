@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/storefront-builder-sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Proxima Builder iframe bridge and editable component wrappers for Astro storefronts.",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "./EditableSection.astro": "./src/EditableSection.astro",
     "./EditableAttribute.astro": "./src/EditableAttribute.astro",
     "./EditableItem.astro": "./src/EditableItem.astro",
-    "./preview.css": "./src/preview.css"
+    "./preview.css": "./src/preview.css",
+    "./inspect-meta": "./src/inspect-meta.ts"
   },
   "files": [
     "src"
