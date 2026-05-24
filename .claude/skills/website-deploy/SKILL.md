@@ -23,6 +23,23 @@ Específicamente:
 
 **Es 100% idempotente** — el mismo manifest siempre produce el mismo resultado.
 
+**`attribute_schema`:** lo define el developer en el manifiesto (`help_text`, `options` estructuradas). Guía: [`docs/07-cms-attribute-schema.md`](../../docs/07-cms-attribute-schema.md). La API persiste en `WebsiteSectionType` sin hardcode por section type.
+
+También sincroniza **`shell_sections`** (header, mega_menu, footer) si el manifiesto los declara y aún no existen en el website.
+
+---
+
+## Deploy vs seed (no confundir)
+
+| Herramienta | Qué sube | Qué **no** hace |
+|-------------|----------|------------------|
+| **`website-deploy`** | `section_types`, páginas vacías si faltan, slots de shell | Catálogo, smart collections, textos/valores de secciones, contenido del shell |
+| **Scripts de seed** (p. ej. `proxima-api/scripts/seed_214store_website.py`) | Website, catálogo, home con valores, shell con datos | Schemas por-website del Builder |
+
+**Orden local 214store:** seed → deploy. En monorepo `proxima-storefronts`: `apps/214store/docs/DEPLOY.md`.
+
+Tras un seed que **recrea** el website, el `website_id` cambia. Si el deploy devuelve **403**, la service account puede seguir ligada al website viejo — actualizar `website_id` en admin o re-ejecutar el seed (214store re-enlaza accounts del business).
+
 ---
 
 ## Prerequisitos
@@ -35,28 +52,39 @@ PROXIMA_DOMAIN=<dominio-exacto-del-website>
 PROXIMA_SERVICE_KEY=pxa_live_...
 ```
 
-El website debe existir en el admin de Proxima. El deploy no lo crea.
+Alias aceptado: `PROXIMA_WEBSITE_DOMAIN` (mismo valor que `PROXIMA_DOMAIN`).
+
+El website debe existir en el admin de Proxima. El deploy no lo crea (salvo scripts de seed en dev).
 
 ---
 
 ## Ejecutar el deploy
 
 ```bash
+# Desde la raíz del proyecto storefront (donde está proxima.website.json)
+cd <proyecto>
+
 # Preview — ver el payload sin llamar la API
-templateizer website-deploy --dry-run
+node node_modules/@proxima-io/templateizer/dist/index.js website-deploy . --dry-run
+# o: npx proxima-templateizer website-deploy .
 
 # Deploy estándar
-templateizer website-deploy
+npx proxima-templateizer website-deploy .
 
-# Forzar breaking changes (con cuidado — puede invalidar contenido del comercio)
-templateizer website-deploy --force
+# En proxima-storefronts/apps/214store (recomendado — salida visible):
+npm run manifest:deploy
+
+# Breaking changes — el target "." va ANTES de los flags
+npx proxima-templateizer website-deploy . --force
 
 # Overrides para CI/CD
-templateizer website-deploy \
+npx proxima-templateizer website-deploy . \
   --api-url https://api.proxima.io \
   --domain mitienda.proxima.app \
   --service-key pxa_live_xxx
 ```
+
+> Si `npx proxima-templateizer website-deploy` termina en silencio sin output, invocar con `node …/templateizer/dist/index.js website-deploy .` o el script `manifest:deploy` del app.
 
 ---
 
@@ -123,7 +151,7 @@ Cuando hay breaking changes sin `--force`:
 
 Con `--force`:
 ```
-templateizer website-deploy --force
+npx proxima-templateizer website-deploy . --force
 ```
 
 > **Usar `--force` con cuidado en producción.** Si el comercio tiene contenido configurado
@@ -187,6 +215,11 @@ Payload (lo que construye el CLI desde `proxima.website.json`):
         { "section_type": "hero", "order": 1 }
       ]
     }
+  ],
+  "shell_sections": [
+    { "key": "header", "section_type": "header", "order": 1 },
+    { "key": "mega_menu", "section_type": "mega_menu", "order": 2 },
+    { "key": "footer", "section_type": "footer", "order": 3 }
   ]
 }
 ```
@@ -225,15 +258,15 @@ El `PROXIMA_DOMAIN` en `.env` no coincide con ningún website en el admin.
 
 ---
 
-### `403 — Not authorized for this website`
-
-El service key pertenece a un negocio distinto al dueño del website.
+### `403 — Not authorized for this website` / Access denied
 
 **Causas comunes:**
-- Se usó el service key de un proyecto anterior
-- El admin creó el service key con el `business_id` equivocado
+1. **`business_id` distinto** — el token no es del negocio dueño del website.
+2. **`website_id` distinto** — la service account está ligada a un website concreto y el dominio fue **re-creado** (p. ej. tras un seed). Actualizar `website_id` en admin o re-ejecutar el seed que re-enlaza accounts.
+3. **Scope** — falta `cms:websites:write`.
+4. Service key de otro proyecto o `business_id` equivocado al crear el token.
 
-**Solución:** Pedir al equipo de Proxima un service key nuevo asociado al business correcto.
+**Solución:** Corregir enlace website ↔ service account, o pedir un token nuevo al equipo de Proxima.
 
 ---
 
@@ -261,7 +294,7 @@ El manifiesto tiene cambios que invalidarían contenido existente.
 
 **Opciones:**
 1. Revertir el cambio en `proxima.website.json` (si fue un error)
-2. `templateizer website-deploy --force` (si el cambio es intencional y se acepta perder el contenido)
+2. `npx proxima-templateizer website-deploy . --force` (si el cambio es intencional y se acepta perder el contenido)
 
 ---
 
@@ -329,16 +362,17 @@ Para deploy automático en cada push:
 ```yaml
 # .github/workflows/deploy.yml
 - name: Deploy to Proxima
-  run: npx templateizer website-deploy
+  working-directory: apps/mi-tienda
+  run: npm run manifest:deploy
   env:
     PROXIMA_API_URL: ${{ secrets.PROXIMA_API_URL }}
-    PROXIMA_DOMAIN: ${{ secrets.PROXIMA_DOMAIN }}
+    PROXIMA_DOMAIN: ${{ secrets.PROXIMA_WEBSITE_DOMAIN }}
     PROXIMA_SERVICE_KEY: ${{ secrets.PROXIMA_SERVICE_KEY }}
 ```
 
 O con flags explícitos (sin depender de .env):
 ```bash
-npx templateizer website-deploy \
+npx proxima-templateizer website-deploy . \
   --api-url "$PROXIMA_API_URL" \
   --domain "$PROXIMA_DOMAIN" \
   --service-key "$PROXIMA_SERVICE_KEY"
@@ -366,7 +400,7 @@ Si falla la validación, el CLI imprime el error y sale con code 1 sin llamar a 
 # Ciclo de desarrollo
 pnpm dev                          # servidor local
 # editar proxima.website.json
-templateizer website-deploy       # subir cambios
+npx proxima-templateizer website-deploy .   # subir cambios
 # solo lo nuevo se aplica
 # el contenido del comercio nunca se toca
 ```

@@ -54,8 +54,9 @@ Editar `.env` con los valores reales:
 
 ```env
 PROXIMA_API_URL=https://api.proxima.io
-PROXIMA_DOMAIN=<dominio-del-cliente>        # e.g. tienda-deportes.proxima.app
-PROXIMA_SERVICE_KEY=pxa_live_...            # token entregado por Proxima
+PROXIMA_DOMAIN=<dominio-del-cliente>        # e.g. tienda-deportes.proxima.app (templateizer)
+PROXIMA_WEBSITE_DOMAIN=<mismo-dominio>      # alias usado por storefront-core
+PROXIMA_SERVICE_KEY=pxa_live_...            # scope cms:websites:write
 PUBLIC_PROXIMA_API_URL=https://api.proxima.io
 ```
 
@@ -209,6 +210,8 @@ Editar `proxima.website.json` para que refleje las secciones reales del cliente.
 | `array` | Lista de items (usar `config.item_fields`) |
 | `smart_collection_id` | Query dinámica (productos, categorías, etc.) |
 
+**Builder (`help_text` / `options`):** ver [`docs/07-cms-attribute-schema.md`](../../docs/07-cms-attribute-schema.md). El manifiesto del website define el schema; deploy con `website-deploy`.
+
 ### Estructura de una página
 
 **Página estática** (path fijo):
@@ -290,13 +293,20 @@ export const SECTION_MAP: Record<string, any> = {
 
 ## Paso 5 — Deploy a Proxima
 
+El deploy sube **schemas** (`section_types`, `shell_sections`) y crea páginas vacías si faltan. **No** sube catálogo ni contenido editorial — eso es seed o edición en Builder.
+
 ```bash
 # Ver qué se enviará sin hacer la llamada
-npx templateizer website-deploy --dry-run
+npx proxima-templateizer website-deploy . --dry-run
 
-# Deploy real
-npx templateizer website-deploy
+# Deploy real (desde la raíz del proyecto, donde está proxima.website.json)
+npx proxima-templateizer website-deploy .
+
+# Breaking changes
+npx proxima-templateizer website-deploy . --force
 ```
+
+En monorepo **proxima-storefronts** (app `214store`): `npm run manifest:deploy` tras configurar `.env`. Contenido demo local: `proxima-api/scripts/seed_214store_website.py` → luego deploy. Ver `apps/214store/docs/DEPLOY.md`.
 
 Output esperado:
 ```

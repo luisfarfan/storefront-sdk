@@ -15,7 +15,9 @@ El comercio abre el Builder y ve **una página en blanco**. No puede agregar sec
 porque la API no sabe qué secciones existen. No puede editar atributos porque la API
 no sabe qué campos tiene cada sección.
 
-`templateizer website-deploy` resuelve esto en **un solo comando**.
+`proxima-templateizer website-deploy` resuelve los **schemas y la estructura** en un solo comando.
+
+> **No confundir con seed:** el deploy no sube catálogo, smart collections ni textos de secciones. Eso requiere scripts de seed (dev) o edición en Builder. En monorepo `proxima-storefronts`, ver `apps/214store/docs/DEPLOY.md` (orden: seed → deploy).
 
 ---
 
@@ -25,8 +27,8 @@ El starter incluye dos archivos de manifiesto. Es importante no confundirlos:
 
 | Archivo | Para qué | Comando |
 |---------|----------|---------|
-| `proxima.website.json` | Deploy a un website específico de un cliente | `templateizer website-deploy` |
-| `proxima.template.json` | Publicar en el Proxima Marketplace | `templateizer register/publish` |
+| `proxima.website.json` | Deploy a un website específico de un cliente | `proxima-templateizer website-deploy` |
+| `proxima.template.json` | Publicar en el Proxima Marketplace | `proxima-templateizer register/publish` |
 
 **Si estás construyendo para un cliente concreto, solo necesitas `proxima.website.json`.**
 
@@ -46,7 +48,8 @@ Para verificar que tienes todo lo necesario en el `.env`:
 ```env
 PROXIMA_API_URL=https://api.proxima.io
 PROXIMA_DOMAIN=tienda-deportes.proxima.app   # debe coincidir con el website en el admin
-PROXIMA_SERVICE_KEY=sk_live_...              # service key del tenant
+PROXIMA_WEBSITE_DOMAIN=tienda-deportes.proxima.app   # alias aceptado por el CLI
+PROXIMA_SERVICE_KEY=pxa_live_...             # scope cms:websites:write
 ```
 
 ---
@@ -59,9 +62,12 @@ Define exactamente lo que el deploy sube a la API.
 {
   "schema_version": "1.0",
   "section_types": [...],
-  "pages": [...]
+  "pages": [...],
+  "shell_sections": [...]
 }
 ```
+
+`shell_sections` declara slots globales (header, mega_menu, footer). El deploy los crea vacíos si no existen; no sobrescribe valores ya configurados.
 
 ### `section_types`
 
@@ -125,11 +131,11 @@ primera vez. El comercio abre el Builder y ve la estructura ya armada.
 ## Ejecutar el deploy
 
 ```bash
-# 1. Validar el manifiesto localmente (usa proxima.template.json)
-templateizer validate
+# 1. Validar proxima.website.json (desde la raíz del storefront)
+npx proxima-templateizer validate .
 
-# 2. Deploy a tu website específico (usa proxima.website.json)
-templateizer website-deploy
+# 2. Deploy (el "." es el directorio del manifiesto — obligatorio antes de flags)
+npx proxima-templateizer website-deploy .
 ```
 
 El CLI lee el `.env` del proyecto para autenticarse y determinar el website de destino.
@@ -138,14 +144,19 @@ El CLI lee el `.env` del proyecto para autenticarse y determinar el website de d
 
 ```bash
 # Ver qué se enviaría sin hacer la llamada
-templateizer website-deploy --dry-run
+npx proxima-templateizer website-deploy . --dry-run
 
 # Forzar cambios breaking (cambios de tipo, renombres de atributos)
-templateizer website-deploy --force
+npx proxima-templateizer website-deploy . --force
 
 # Sobreescribir credenciales (útil en CI)
-templateizer website-deploy --api-url https://api.proxima.io --service-key sk_live_... --domain tienda.proxima.app
+npx proxima-templateizer website-deploy . \
+  --api-url https://api.proxima.io \
+  --service-key pxa_live_... \
+  --domain tienda.proxima.app
 ```
+
+> Si `npx proxima-templateizer` termina sin output, usar `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .`
 
 ---
 
@@ -206,12 +217,14 @@ Pages
 
 ## Re-deploy (iteraciones)
 
-El deploy es **100% idempotente**. Córrelo en cada iteración sin miedo:
+El deploy es **100% idempotente**. Córrelo en cada iteración sin miedo.
+
+El `attribute_schema` del manifiesto define el formulario del Builder (`help_text`, `options`). Ver [07-cms-attribute-schema.md](./07-cms-attribute-schema.md).
 
 ```bash
 # Ciclo típico durante el desarrollo
 pnpm dev                          # verificar en local
-templateizer website-deploy       # subir cambios al website del cliente
+npx proxima-templateizer website-deploy .   # subir cambios al website del cliente
 # → solo lo nuevo se aplica, el contenido del comercio no se toca
 ```
 
@@ -233,7 +246,7 @@ Si referencias un `section_type` en `scaffold_sections` que no está declarado e
 `section_types`, el CLI lo detecta **antes** de llamar a la API:
 
 ```bash
-templateizer website-deploy
+npx proxima-templateizer website-deploy .
 
 # ✗ Invalid manifest at proxima.website.json:
 #   pages[0].scaffold_sections[2].section_type: section_type 'banner' not declared in section_types
@@ -251,7 +264,7 @@ pnpm dev
 # → Cada sección implementada debe estar en proxima.website.json
 
 # 3. Deploy
-templateizer website-deploy
+npx proxima-templateizer website-deploy .
 # → El Builder ya muestra las secciones disponibles
 # → Las páginas tienen su estructura inicial lista
 
@@ -262,7 +275,7 @@ templateizer website-deploy
 
 # 5. Añadir nueva sección al código
 # → Añadirla también en proxima.website.json
-templateizer website-deploy   # solo crea lo nuevo, no toca el resto
+npx proxima-templateizer website-deploy .   # solo crea lo nuevo, no toca el resto
 ```
 
 ---
@@ -274,9 +287,9 @@ Proxima Marketplace (para que otros comercios lo instalen), ese es un flujo sepa
 que usa `proxima.template.json`:
 
 ```bash
-templateizer validate          # valida proxima.template.json
-templateizer register          # registra el template en el marketplace
-templateizer publish           # publica para que otros lo vean
+npx proxima-templateizer validate .
+npx proxima-templateizer register .
+npx proxima-templateizer publish .
 ```
 
 Ver [08 — Template Authoring](./08-template-authoring.md) para ese flujo.
@@ -291,4 +304,5 @@ Ver [08 — Template Authoring](./08-template-authoring.md) para ese flujo.
 - [ ] Cada sección en `src/sections/` tiene su entrada en `section_types`
 - [ ] Cada `section_type` en `scaffold_sections` existe en la lista de `section_types`
 - [ ] Los `key` en el manifiesto coinciden con los de `SECTION_MAP`
-- [ ] `templateizer website-deploy --dry-run` muestra el payload esperado
+- [ ] `npx proxima-templateizer website-deploy . --dry-run` muestra el payload esperado
+- [ ] Si hubo seed que recreó el website: service account con `website_id` actual (403 si no)

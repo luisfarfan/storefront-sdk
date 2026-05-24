@@ -2,8 +2,9 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { TemplateRegistryClient, type WebsiteTemplateRecord } from "@proxima-io/template-registry-client";
-import { parseTemplateManifest, validateTemplateManifest, type TemplateManifest } from "@proxima-io/template-schema";
+import { fileURLToPath } from "node:url";
+import { TemplateRegistryClient, WebsiteDeployClient, WebsiteDeployClientError, type WebsiteTemplateRecord } from "@proxima-io/template-registry-client";
+import { parseTemplateManifest, validateTemplateManifest, validateWebsiteDeployManifest, type TemplateManifest, type WebsiteDeployManifest } from "@proxima-io/template-schema";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -21,6 +22,7 @@ const commands = new Set([
   "publish",
   "sync",
   "status",
+  "website-deploy",
 ]);
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
@@ -53,6 +55,9 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   }
   if (command === "status") {
     return statusTemplateCommand(targetPath, argv.slice(2));
+  }
+  if (command === "website-deploy") {
+    return websiteDeployCommand(targetPath, argv.slice(2));
   }
   if (command === "preview") {
     console.log("Run preview with: pnpm --filter @proxima-io/catalog-preview dev");
@@ -441,6 +446,196 @@ function readFlag(argv: string[], name: string) {
   return index >= 0 ? argv[index + 1] : undefined;
 }
 
+// ---------------------------------------------------------------------------
+// website-deploy command
+// ---------------------------------------------------------------------------
+
+/**
+ * Reads a .env file from the given directory and returns key=value pairs.
+ * Values already in process.env take precedence (allows CI overrides).
+ */
+function loadDotEnv(targetPath: string): Record<string, string> {
+  const envPath = path.join(targetPath, ".env");
+  const result: Record<string, string> = {};
+  if (!existsSync(envPath)) return result;
+
+  const content = readFileSync(envPath, "utf8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const raw = trimmed.slice(eq + 1).trim();
+    // Strip surrounding quotes if present
+    const value = raw.replace(/^["']|["']$/g, "");
+    result[key] = value;
+  }
+  return result;
+}
+
+function resolveEnvVar(key: string, dotenv: Record<string, string>): string | undefined {
+  // process.env takes precedence over .env file
+  return process.env[key] ?? dotenv[key];
+}
+
+function findWebsiteManifestPath(targetPath: string): string | null {
+  const websiteManifest = path.join(targetPath, "proxima.website.json");
+  if (existsSync(websiteManifest)) return websiteManifest;
+
+  // Fallback: warn if only proxima.template.json exists
+  const templateManifest = path.join(targetPath, "proxima.template.json");
+  if (existsSync(templateManifest)) {
+    console.warn(
+      "⚠  proxima.website.json not found. Falling back to proxima.template.json\n" +
+      "   Consider creating proxima.website.json for the website-deploy command.",
+    );
+    return templateManifest;
+  }
+  return null;
+}
+
+function loadWebsiteManifest(targetPath: string): WebsiteDeployManifest {
+  const manifestPath = findWebsiteManifestPath(targetPath);
+  if (!manifestPath) {
+    throw new Error(
+      "proxima.website.json not found. Run from your storefront project root.",
+    );
+  }
+
+  const raw = readJson(manifestPath);
+  const result = validateWebsiteDeployManifest(raw);
+  if (!result.success) {
+    const issues = result.error.issues
+      .map((issue) => `  ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("\n");
+    throw new Error(`Invalid manifest at ${manifestPath}:\n${issues}`);
+  }
+  return result.data;
+}
+
+async function websiteDeployCommand(targetPath: string, argv: string[]): Promise<number> {
+  const dotenv = loadDotEnv(targetPath);
+
+  const apiUrl     = readFlag(argv, "--api-url")     ?? resolveEnvVar("PROXIMA_API_URL", dotenv);
+  const serviceKey = readFlag(argv, "--service-key") ?? resolveEnvVar("PROXIMA_SERVICE_KEY", dotenv);
+  const domain     =
+    readFlag(argv, "--domain") ??
+    resolveEnvVar("PROXIMA_DOMAIN", dotenv) ??
+    resolveEnvVar("PROXIMA_WEBSITE_DOMAIN", dotenv);
+  const dryRun     = argv.includes("--dry-run");
+  const force      = argv.includes("--force");
+
+  // Validate credentials up front
+  if (!apiUrl) {
+    console.error("✗ PROXIMA_API_URL is required (set in .env or pass --api-url)");
+    return 1;
+  }
+  if (!serviceKey) {
+    console.error("✗ PROXIMA_SERVICE_KEY is required (set in .env or pass --service-key)");
+    return 1;
+  }
+  if (!domain) {
+    console.error("✗ PROXIMA_DOMAIN is required (set in .env or pass --domain)");
+    return 1;
+  }
+
+  // Load and validate manifest
+  let manifest: WebsiteDeployManifest;
+  try {
+    manifest = loadWebsiteManifest(targetPath);
+  } catch (err: unknown) {
+    console.error(`✗ ${(err as Error).message}`);
+    return 1;
+  }
+
+  // Dry run — print payload and exit
+  if (dryRun) {
+    console.log("Dry run — no API call made.\n");
+    console.log("Payload:");
+    console.log(JSON.stringify({
+      website_domain: domain,
+      section_types: manifest.section_types,
+      pages: manifest.pages,
+      shell_sections: manifest.shell_sections ?? [],
+    }, null, 2));
+    return 0;
+  }
+
+  // Deploy
+  const start = Date.now();
+  let client: WebsiteDeployClient;
+  try {
+    client = new WebsiteDeployClient({ apiUrl, serviceKey });
+  } catch (err: unknown) {
+    console.error(`✗ ${(err as Error).message}`);
+    return 1;
+  }
+
+  try {
+    const result = await client.deploy(domain, manifest, { force });
+    const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+    console.log(`✓ Connected to ${result.website.domain} (website #${result.website.id})\n`);
+
+    // Section types summary
+    console.log("Section types");
+    for (const key of result.section_types.created)   console.log(`  + created    ${key}`);
+    for (const key of result.section_types.updated)   console.log(`  ~ updated    ${key}`);
+    if (result.section_types.unchanged.length) {
+      console.log(`  · unchanged  ${result.section_types.unchanged.join(", ")}`);
+    }
+
+    // Pages summary
+    console.log("\nPages");
+    for (const pageId of result.pages.created) {
+      const scaffolded = result.pages.scaffolded[pageId];
+      const scaffoldStr = scaffolded?.length ? `  →  scaffolded [${scaffolded.join(", ")}]` : "";
+      console.log(`  + created    ${pageId}${scaffoldStr}`);
+    }
+    for (const [pageId, reason] of Object.entries(result.pages.skipped)) {
+      console.log(`  · skipped    ${pageId}  (${reason})`);
+    }
+
+    // Warnings
+    if (result.warnings.length) {
+      console.log("\n⚠ Warnings");
+      for (const warning of result.warnings) console.log(`  · ${warning}`);
+    }
+
+    console.log(`\n✓ Deploy completed in ${elapsed}s`);
+    return 0;
+  } catch (err: unknown) {
+    if (err instanceof WebsiteDeployClientError) {
+      if (err.status === 409 && err.breakingChanges?.length) {
+        console.error("✗ Deploy blocked — breaking changes detected:\n");
+        for (const bc of err.breakingChanges) {
+          console.error(`  Section type: ${bc.section_type}`);
+          console.error(`  Attribute:    ${bc.attribute}`);
+          console.error(`  Change:       ${bc.change} from '${bc.from}' to '${bc.to}'\n`);
+        }
+        console.error("Re-run with --force to apply these changes.");
+        console.error("Note: existing attribute content may be incompatible with the new type.");
+        return 1;
+      }
+      if (err.status === 404) {
+        console.error(`✗ Website '${domain}' not found.`);
+        console.error("  Verify PROXIMA_DOMAIN matches a website configured in the Proxima admin.");
+        return 1;
+      }
+      if (err.status === 403) {
+        console.error("✗ Access denied. The service key does not have access to this website.");
+        return 1;
+      }
+      console.error(`✗ Deploy failed (${err.status ?? "network error"}): ${err.message}`);
+      if (err.responseText) console.error(`  ${err.responseText}`);
+      return 1;
+    }
+    console.error(`✗ Unexpected error: ${(err as Error).message}`);
+    return 1;
+  }
+}
+
 function printHelp() {
   console.log(`Usage: proxima-templateizer <command> <target>
 
@@ -458,8 +653,16 @@ Commands:
   publish           Mark a registered template as published.
   sync              Validate, register, optionally deploy metadata, optionally publish.
   status            Show admin registry state and storefront visibility.
+  website-deploy    Deploy section types + page scaffolding to a specific website.
 
-Options:
+Website deploy options:
+  --dry-run         Print the payload without calling the API.
+  --force           Allow breaking changes (attribute type changes, renames).
+  --domain          Override PROXIMA_DOMAIN.
+  --service-key     Override PROXIMA_SERVICE_KEY.
+  --api-url         Override PROXIMA_API_URL.
+
+Template registry options:
   --dry-run         Print planned action without calling the API.
   --api-url         Override PROXIMA_API_URL.
   --token           Override PROXIMA_API_TOKEN.
@@ -467,7 +670,17 @@ Options:
 `);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+function isCliEntrypoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fileURLToPath(import.meta.url) === path.resolve(entry);
+  } catch {
+    return false;
+  }
+}
+
+if (isCliEntrypoint()) {
   run().then((code) => {
     process.exitCode = code;
   });

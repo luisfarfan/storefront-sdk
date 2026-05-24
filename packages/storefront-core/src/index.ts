@@ -48,6 +48,15 @@ export interface ProximaWebsiteResponse {
   theme_tokens: Record<string, any>;
   animation_config: Record<string, any>;
   pages: ProximaPageSummary[];
+  shell_sections?: Record<
+    string,
+    {
+      section_id: number;
+      section_type: string;
+      section_name: string;
+      attributes: Record<string, any>;
+    }
+  >;
 }
 
 export interface ProximaCompositionResponse {

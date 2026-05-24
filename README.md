@@ -7,7 +7,7 @@ Monorepo centralizado de paquetes SDK para storefronts y templates de Proxima.
 | Paquete | Descripción | Consumidores |
 |---|---|---|
 | [`@proxima/storefront-cms`](packages/storefront-cms) | Normalización de secciones CMS, tenant resolution, preview detection, API client factory | Cualquier storefront Astro |
-| [`@proxima/storefront-core`](packages/storefront-core) | HTTP client para Proxima API — websites, composiciones, productos | Cualquier storefront Astro |
+| [`@proxima/storefront-core`](packages/storefront-core) | HTTP client para Proxima API — website resolution, composición CMS, catálogo storefront (búsqueda, listados, filtros), autenticación de compradores, carrito, wishlist, órdenes, libro de direcciones y analytics | Cualquier storefront Astro |
 | [`@proxima/storefront-commerce`](packages/storefront-commerce) | Helpers de commerce y tipos centrales (`DeliveryMode`, `ResolverKind`, etc.) | Cualquier storefront Astro |
 | [`@proxima/storefront-builder-sdk`](packages/storefront-builder-sdk) | Bridge postMessage con Proxima Builder + componentes Astro editables | Solo proyectos Astro |
 | [`@proxima/template-schema`](packages/template-schema) | Schema Zod y tipos TypeScript para `proxima.template.json` | CLI, proxima-api, CI |

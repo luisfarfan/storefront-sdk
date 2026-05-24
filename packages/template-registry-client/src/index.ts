@@ -127,3 +127,125 @@ export function normalizeApiUrl(value?: string): string {
 export function redactToken(value: string, token: string): string {
   return token ? value.split(token).join("[REDACTED]") : value;
 }
+
+// ---------------------------------------------------------------------------
+// WebsiteDeployClient — deploys section types + page scaffolding to a specific
+// website. Uses PROXIMA_SERVICE_KEY (not PROXIMA_API_TOKEN).
+// ---------------------------------------------------------------------------
+
+export interface WebsiteDeployOptions {
+  /** Base URL of the Proxima API. Default: process.env.PROXIMA_API_URL */
+  apiUrl?: string;
+  /** Service key for the website's business. Default: process.env.PROXIMA_SERVICE_KEY */
+  serviceKey?: string;
+  /** Optional fetch override (for testing). */
+  fetchImpl?: typeof fetch;
+}
+
+export interface WebsiteDeployResult {
+  ok: boolean;
+  website: { id: number; domain: string };
+  section_types: { created: string[]; updated: string[]; unchanged: string[] };
+  pages: {
+    created: string[];
+    scaffolded: Record<string, string[]>;
+    skipped: Record<string, string>;
+  };
+  warnings: string[];
+}
+
+export interface WebsiteDeployBreakingChange {
+  section_type: string;
+  attribute: string;
+  change: string;
+  from: string;
+  to: string;
+}
+
+export class WebsiteDeployClientError extends Error {
+  readonly status?: number;
+  readonly responseText?: string;
+  readonly breakingChanges?: WebsiteDeployBreakingChange[];
+
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      responseText?: string;
+      breakingChanges?: WebsiteDeployBreakingChange[];
+    } = {},
+  ) {
+    super(message);
+    this.name = "WebsiteDeployClientError";
+    this.status = options.status;
+    this.responseText = options.responseText;
+    this.breakingChanges = options.breakingChanges;
+  }
+}
+
+export class WebsiteDeployClient {
+  private readonly apiUrl: string;
+  private readonly serviceKey: string;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: WebsiteDeployOptions = {}) {
+    this.apiUrl = normalizeApiUrl(options.apiUrl ?? process.env["PROXIMA_API_URL"]);
+    this.serviceKey = options.serviceKey ?? process.env["PROXIMA_SERVICE_KEY"] ?? "";
+    this.fetchImpl = options.fetchImpl ?? fetch;
+
+    if (!this.apiUrl) {
+      throw new WebsiteDeployClientError("PROXIMA_API_URL is required");
+    }
+    if (!this.serviceKey) {
+      throw new WebsiteDeployClientError("PROXIMA_SERVICE_KEY is required");
+    }
+  }
+
+  async deploy(
+    domain: string,
+    manifest: { section_types: unknown[]; pages: unknown[]; shell_sections?: unknown[] },
+    options: { force?: boolean } = {},
+  ): Promise<WebsiteDeployResult> {
+    const url = `${this.apiUrl}/api/v1/admin/cms/websites/deploy${options.force ? "?force=true" : ""}`;
+
+    const response = await this.fetchImpl(url, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.serviceKey}`,
+      },
+      body: JSON.stringify({
+        website_domain: domain,
+        section_types: manifest.section_types,
+        pages: manifest.pages,
+        shell_sections: manifest.shell_sections ?? [],
+      }),
+    });
+
+    const text = await response.text();
+    const body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+
+    if (response.status === 409) {
+      throw new WebsiteDeployClientError(
+        (body["detail"] as string) ?? "Breaking change detected. Re-run with --force to override.",
+        {
+          status: 409,
+          responseText: redactToken(text, this.serviceKey),
+          breakingChanges: body["breaking_changes"] as WebsiteDeployBreakingChange[] | undefined,
+        },
+      );
+    }
+
+    if (!response.ok) {
+      throw new WebsiteDeployClientError(
+        `Deploy request failed: POST /api/v1/admin/cms/websites/deploy -> ${response.status}`,
+        {
+          status: response.status,
+          responseText: redactToken(text, this.serviceKey),
+        },
+      );
+    }
+
+    return body as unknown as WebsiteDeployResult;
+  }
+}

@@ -8,7 +8,7 @@ Cómo definir, registrar y renderizar secciones. El ciclo completo desde diseño
 
 ```
 1. Diseño → Identificar qué partes son editables
-2. Schema  → Definir attribute_schema (nombre, tipo, label)
+2. Schema  → Definir attribute_schema (nombre, tipo, label, help_text, options)
 3. Registro → Crear el SectionType en el admin (o via template)
 4. Componente → Crear el Astro component que renderiza
 5. Router → Añadir al SECTION_MAP
@@ -43,7 +43,9 @@ botón     → editable → type: link  (texto + URL juntos)
 
 ## Paso 2 — Definir el schema
 
-En el `proxima.template.json` o directamente en el admin:
+Guía detallada de `help_text`, `options` estructuradas y overrides: **[07-cms-attribute-schema.md](./07-cms-attribute-schema.md)**.
+
+En el `proxima.template.json`, `proxima.website.json` o directamente en el admin:
 
 ```json
 {

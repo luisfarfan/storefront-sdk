@@ -94,6 +94,15 @@ Solo `name`, `label`, `type` y `order` son obligatorios. El resto es opcional.
 | `array` | Lista de items repetibles | `{ "item_fields": [{ "name": "...", "type": "..." }] }` |
 | `smart_collection_id` | Query dinámica (productos, categorías...) | `{ "allowed_smart_collection_types": ["product_list"] }` |
 
+### `help_text` y `options` (Builder)
+
+**Guía canónica:** [`docs/07-cms-attribute-schema.md`](../../docs/07-cms-attribute-schema.md) (API: `proxima-api/docs/cms-attribute-schema.md`).
+
+- Schema en **`proxima.website.json`** → `website-deploy` → `WebsiteSectionType`; la API no hardcodea por section type.
+- **`help_text`**: explicación del campo (un string). No `"optA = …; optB = …"`.
+- **`options`**: `[{ "value", "label", "description"? }]` (recomendado) o `string[]` (legado).
+- Overrides en arrays: `config.schema` + `item_fields`. Referencia: `proxima-storefronts/apps/214store/proxima.website.json`.
+
 ### Flags por atributo
 
 | Flag | Tipo | Default | Efecto |

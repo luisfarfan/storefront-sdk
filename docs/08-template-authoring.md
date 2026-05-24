@@ -267,7 +267,9 @@ la actualización es manual. Proxima muestra un aviso al comercio.
 ## Atributos — opciones de configuración
 
 Cada atributo en `attribute_schema` puede tener un campo `config` para
-restringir los valores posibles:
+restringir los valores posibles.
+
+**Guía completa (help_text vs options, selects, overrides):** [07-cms-attribute-schema.md](./07-cms-attribute-schema.md)
 
 ```json
 { "name": "columns", "type": "number", "config": { "min": 2, "max": 6, "step": 1 } }
@@ -275,20 +277,37 @@ restringir los valores posibles:
 { "name": "products", "type": "smart_collection_id",
   "config": { "allowed_smart_collection_types": ["product_list"] } }
 
-{ "name": "variant", "type": "text",
-  "config": { "options": ["primary", "secondary", "dark"] } }
+{ "name": "variant", "type": "select",
+  "config": {
+    "help_text": "Tema visual de la franja.",
+    "schema": {
+      "mode": "scalar",
+      "fields": [{
+        "name": "value",
+        "type": "select",
+        "options": [
+          { "value": "primary", "label": "Primary" },
+          { "value": "secondary", "label": "Secondary" }
+        ]
+      }]
+    }
+  } }
 
 { "name": "items", "type": "array",
   "config": {
-    "item_fields": [
-      { "name": "title",   "type": "text" },
-      { "name": "body",    "type": "rich_text" },
-      { "name": "icon",    "type": "image" }
-    ],
+    "schema": {
+      "mode": "array",
+      "item_fields": [
+        { "name": "title", "type": "text" },
+        { "name": "body",  "type": "rich_text" }
+      ]
+    },
     "max_items": 10
   }
 }
 ```
+
+Legado: `"config": { "options": ["primary", "secondary"] }` en `type: "text"` sigue válido (label = value).
 
 ---
 

@@ -193,3 +193,112 @@ function normalizeKey(key: string): string {
     .replace(/^_+|_+$/g, "")
     .toLowerCase();
 }
+
+// ---------------------------------------------------------------------------
+// WebsiteDeployManifest — simpler schema for deploying to a specific website.
+// Used by `templateizer website-deploy`. Does NOT require marketplace fields.
+// ---------------------------------------------------------------------------
+
+export const websiteDeployAttributeSchema = z.object({
+  name:        z.string().min(1),
+  label:       z.string().optional(),
+  type:        z.enum(attributeTypes),
+  config:      jsonObject.default({}),
+  order:       z.number().int().default(0),
+  is_required: z.boolean().default(false),
+  localizable: z.boolean().default(false),
+});
+
+export const websiteDeploySectionTypeSchema = z.object({
+  key:              z.string().min(1),
+  label:            z.string().min(1),
+  category:         z.string().optional(),
+  attribute_schema: z.array(websiteDeployAttributeSchema).default([]),
+});
+
+export const websiteDeployScaffoldSectionSchema = z.object({
+  section_type: z.string().min(1),
+  order:        z.number().int().default(0),
+});
+
+export const websiteDeployPageSchema = z.object({
+  resolver_kind:     z.string().min(1),
+  path:              z.string().optional(),
+  label:             z.string().optional(),
+  scaffold_sections: z.array(websiteDeployScaffoldSectionSchema).default([]),
+});
+
+export const websiteDeployShellSectionSchema = z.object({
+  key:          z.string().min(1),
+  section_type: z.string().min(1).optional(),
+  label:        z.string().optional(),
+  order:        z.number().int().default(0),
+});
+
+export const websiteDeployManifestSchema = z
+  .object({
+    schema_version: z.literal("1.0").default("1.0"),
+    section_types:  z.array(websiteDeploySectionTypeSchema).min(1),
+    pages:          z.array(websiteDeployPageSchema).default([]),
+    shell_sections: z.array(websiteDeployShellSectionSchema).default([]),
+  })
+  .superRefine((manifest, ctx) => {
+    const keys = new Set(manifest.section_types.map((st) => st.key));
+
+    manifest.shell_sections.forEach((shell, si) => {
+      const sectionType = shell.section_type ?? shell.key;
+      if (!keys.has(sectionType)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `section_type '${sectionType}' is not declared in section_types`,
+          path: ["shell_sections", si, "section_type"],
+        });
+      }
+    });
+
+    const shellKeys = new Set<string>();
+    manifest.shell_sections.forEach((shell, si) => {
+      if (shellKeys.has(shell.key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `duplicate shell key '${shell.key}'`,
+          path: ["shell_sections", si, "key"],
+        });
+      }
+      shellKeys.add(shell.key);
+    });
+
+    // All section_type keys in scaffold_sections must exist in section_types
+    manifest.pages.forEach((page, pi) => {
+      page.scaffold_sections.forEach((scaffold, si) => {
+        if (!keys.has(scaffold.section_type)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `section_type '${scaffold.section_type}' is not declared in section_types`,
+            path: ["pages", pi, "scaffold_sections", si, "section_type"],
+          });
+        }
+      });
+    });
+
+    // Static pages (content_page) must have a path
+    manifest.pages.forEach((page, pi) => {
+      if (page.resolver_kind === "content_page" && !page.path) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "pages with resolver_kind 'content_page' require a 'path' field",
+          path: ["pages", pi, "path"],
+        });
+      }
+    });
+  });
+
+export type WebsiteDeployManifest = z.infer<typeof websiteDeployManifestSchema>;
+
+export function parseWebsiteDeployManifest(value: unknown): WebsiteDeployManifest {
+  return websiteDeployManifestSchema.parse(value);
+}
+
+export function validateWebsiteDeployManifest(value: unknown) {
+  return websiteDeployManifestSchema.safeParse(value);
+}
