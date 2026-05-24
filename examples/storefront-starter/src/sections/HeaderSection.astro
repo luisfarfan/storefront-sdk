@@ -1,0 +1,124 @@
+---
+import { EditableSection } from '@proxima-io/storefront-builder-sdk';
+import type { CmsSection } from '@proxima-io/storefront-cms';
+import type { ProximaWebsiteResponse } from '@proxima-io/storefront-core';
+
+interface NavLink {
+  label: string;
+  url: string;
+}
+
+interface Props {
+  section: CmsSection;
+  website: ProximaWebsiteResponse;
+}
+
+const { section, website } = Astro.props;
+const { logo, nav_links = [] as NavLink[] } = section.attributes;
+---
+
+<EditableSection {section}>
+  <header class="site-header">
+    <div class="site-header__inner">
+      <a href="/" class="site-header__logo">
+        {logo
+          ? <img src={logo as string} alt={website.name} height="40" />
+          : <span class="site-header__logo-text">{website.name}</span>
+        }
+      </a>
+
+      <nav class="site-header__nav" aria-label="Navegación principal">
+        {(nav_links as NavLink[]).map(link => (
+          <a href={link.url} class="site-header__nav-link">{link.label}</a>
+        ))}
+      </nav>
+
+      <div class="site-header__actions">
+        <a href="/buscar" aria-label="Buscar" class="site-header__icon-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+        </a>
+        <a href="/cuenta" aria-label="Mi cuenta" class="site-header__icon-btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+        </a>
+        <button
+          id="cart-toggle"
+          aria-label="Ver carrito"
+          class="site-header__icon-btn"
+          data-cart-count="0"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/>
+            <path d="M16 10a4 4 0 0 1-8 0"/>
+          </svg>
+          <span class="site-header__cart-badge" id="cart-badge" hidden>0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+</EditableSection>
+
+<style>
+  .site-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: white;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .site-header__inner {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    height: 64px;
+  }
+  .site-header__logo { text-decoration: none; }
+  .site-header__logo-text { font-weight: 700; font-size: 1.25rem; color: #111; }
+  .site-header__nav { display: flex; gap: 1.5rem; margin-left: auto; }
+  .site-header__nav-link {
+    text-decoration: none;
+    color: #374151;
+    font-size: 0.9375rem;
+    transition: color 0.15s;
+  }
+  .site-header__nav-link:hover { color: var(--proxima-primary, #111); }
+  .site-header__actions { display: flex; align-items: center; gap: 0.5rem; }
+  .site-header__icon-btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #374151;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: background 0.15s;
+  }
+  .site-header__icon-btn:hover { background: #f3f4f6; }
+  .site-header__cart-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--proxima-primary, #111);
+    color: white;
+    font-size: 0.625rem;
+    font-weight: 700;
+    min-width: 16px;
+    height: 16px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 3px;
+  }
+</style>

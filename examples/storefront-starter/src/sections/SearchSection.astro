@@ -1,0 +1,183 @@
+---
+import { EditableSection } from '@proxima-io/storefront-builder-sdk';
+import type { CmsSection } from '@proxima-io/storefront-cms';
+
+interface Props {
+  section: CmsSection;
+}
+
+const { section } = Astro.props;
+const { placeholder = 'Buscar productos...' } = section.attributes as { placeholder?: string };
+
+// Obtener query inicial de la URL
+const q = Astro.url.searchParams.get('q') ?? '';
+---
+
+<EditableSection {section}>
+  <section class="search-section">
+    <div class="search-section__inner">
+      <h1 class="search-section__title">
+        {q ? `Resultados para "${q}"` : 'Buscar'}
+      </h1>
+
+      <form class="search-form" action="/buscar" method="get">
+        <input
+          type="search"
+          name="q"
+          value={q}
+          placeholder={placeholder as string}
+          class="search-form__input"
+          autofocus
+        />
+        <button type="submit" class="search-form__btn">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+        </button>
+      </form>
+
+      <!-- Resultados se renderizan client-side -->
+      <div id="search-results" class="search-results">
+        {!q && (
+          <p class="search-results__hint">Escribe para buscar productos.</p>
+        )}
+      </div>
+    </div>
+  </section>
+</EditableSection>
+
+<script>
+  import { searchStorefront } from '@proxima-io/storefront-core';
+
+  const resultsEl = document.getElementById('search-results')!;
+  const input = document.querySelector('.search-form__input') as HTMLInputElement;
+
+  async function doSearch(q: string) {
+    if (q.length < 2) {
+      resultsEl.innerHTML = '<p class="search-results__hint">Escribe al menos 2 caracteres.</p>';
+      return;
+    }
+
+    resultsEl.innerHTML = '<p class="search-results__loading">Buscando...</p>';
+
+    try {
+      const data = await searchStorefront(
+        { baseUrl: import.meta.env.PUBLIC_PROXIMA_API_URL },
+        {
+          business_id: window.__PROXIMA_BUSINESS_ID__,
+          locale: document.documentElement.lang,
+          currency: window.__PROXIMA_CURRENCY__,
+        },
+        { q, limit: 24 }
+      );
+
+      if (data.hits.length === 0) {
+        resultsEl.innerHTML = `<p class="search-results__empty">No se encontraron resultados para "<strong>${q}</strong>".</p>`;
+        return;
+      }
+
+      resultsEl.innerHTML = `
+        <p class="search-results__count">${data.total} resultado${data.total !== 1 ? 's' : ''}</p>
+        <div class="search-results__grid">
+          ${data.hits.map(p => `
+            <a href="/producto/${p.slug}" class="search-result-card">
+              <div class="search-result-card__image">
+                ${p.image_url ? `<img src="${p.image_url}" alt="${p.name}" loading="lazy" />` : ''}
+              </div>
+              <div class="search-result-card__info">
+                ${p.brand_name ? `<p class="search-result-card__brand">${p.brand_name}</p>` : ''}
+                <h3 class="search-result-card__name">${p.name}</h3>
+                <p class="search-result-card__price">${p.price_formatted ?? p.price}</p>
+              </div>
+            </a>
+          `).join('')}
+        </div>
+      `;
+    } catch {
+      resultsEl.innerHTML = '<p class="search-results__error">Error al buscar. Intenta nuevamente.</p>';
+    }
+  }
+
+  // Buscar con el query inicial de la URL
+  const initialQ = new URLSearchParams(window.location.search).get('q') ?? '';
+  if (initialQ) doSearch(initialQ);
+
+  // Buscar mientras el usuario escribe
+  let timer: ReturnType<typeof setTimeout>;
+  input?.addEventListener('input', () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => doSearch(input.value.trim()), 300);
+  });
+</script>
+
+<style>
+  .search-section { padding: 3rem 0 5rem; }
+  .search-section__inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  .search-section__title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 1.5rem;
+  }
+  .search-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .search-form__input {
+    flex: 1;
+    padding: 0.875rem 1rem;
+    font-size: 1rem;
+    border: 2px solid #e5e7eb;
+    border-radius: var(--proxima-radius, 8px);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .search-form__input:focus { border-color: var(--proxima-primary, #111); }
+  .search-form__btn {
+    padding: 0 1.25rem;
+    background: var(--proxima-primary, #111);
+    color: white;
+    border: none;
+    border-radius: var(--proxima-radius, 8px);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+  .search-results__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.25rem;
+    margin-top: 1rem;
+  }
+  .search-results__count { color: #6b7280; font-size: 0.875rem; margin: 0 0 1rem; }
+  .search-results__hint,
+  .search-results__empty,
+  .search-results__loading,
+  .search-results__error { color: #9ca3af; text-align: center; padding: 2rem 0; }
+  .search-result-card {
+    display: flex;
+    flex-direction: column;
+    text-decoration: none;
+    color: #111827;
+    border: 1px solid #e5e7eb;
+    border-radius: var(--proxima-radius, 8px);
+    overflow: hidden;
+    transition: box-shadow 0.2s;
+  }
+  .search-result-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
+  .search-result-card__image {
+    aspect-ratio: 1;
+    background: #f9fafb;
+    overflow: hidden;
+  }
+  .search-result-card__image img { width: 100%; height: 100%; object-fit: cover; }
+  .search-result-card__info { padding: 0.75rem; }
+  .search-result-card__brand { font-size: 0.7rem; color: #9ca3af; margin: 0 0 0.25rem; text-transform: uppercase; }
+  .search-result-card__name { font-size: 0.875rem; font-weight: 500; margin: 0 0 0.5rem; }
+  .search-result-card__price { font-size: 0.9375rem; font-weight: 700; color: var(--proxima-primary, #111); margin: 0; }
+</style>

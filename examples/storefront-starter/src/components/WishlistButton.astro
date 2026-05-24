@@ -1,0 +1,129 @@
+---
+// WishlistButton — botón standalone para agregar/quitar de favoritos
+// Uso: <WishlistButton productId={product.id} />
+
+interface Props {
+  productId: number;
+  class?: string;
+}
+
+const { productId, class: className } = Astro.props;
+---
+
+<button
+  class:list={['wishlist-btn', className]}
+  data-product-id={productId}
+  data-active="false"
+  aria-label="Agregar a favoritos"
+  aria-pressed="false"
+>
+  <svg class="wishlist-btn__icon wishlist-btn__icon--empty" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+  <svg class="wishlist-btn__icon wishlist-btn__icon--filled" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2">
+    <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+  </svg>
+</button>
+
+<script>
+  // Inicializar estado de todos los botones al cargar
+  async function initWishlist() {
+    const buttons = document.querySelectorAll<HTMLButtonElement>('.wishlist-btn');
+    if (!buttons.length) return;
+
+    try {
+      const res = await fetch('/api/wishlist');
+      if (!res.ok) return;
+      const { items = [] } = await res.json();
+      const wishlistIds = new Set(items.map((i: any) => i.product_id ?? i.id));
+
+      buttons.forEach(btn => {
+        const id = parseInt(btn.dataset.productId ?? '0');
+        setActive(btn, wishlistIds.has(id));
+      });
+    } catch {}
+  }
+
+  function setActive(btn: HTMLButtonElement, active: boolean) {
+    btn.dataset.active = String(active);
+    btn.setAttribute('aria-pressed', String(active));
+    btn.setAttribute('aria-label', active ? 'Quitar de favoritos' : 'Agregar a favoritos');
+  }
+
+  // Click handler delegado — funciona para botones añadidos dinámicamente
+  document.addEventListener('click', async (e) => {
+    const btn = (e.target as Element).closest<HTMLButtonElement>('.wishlist-btn');
+    if (!btn) return;
+
+    const productId = parseInt(btn.dataset.productId ?? '0');
+    if (!productId) return;
+
+    const isActive = btn.dataset.active === 'true';
+    const method = isActive ? 'DELETE' : 'POST';
+
+    // Optimistic update
+    setActive(btn, !isActive);
+
+    try {
+      const res = await fetch('/api/wishlist', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId }),
+      });
+
+      if (res.status === 401) {
+        // Revertir y redirigir al login
+        setActive(btn, isActive);
+        window.location.href = '/login?next=' + encodeURIComponent(window.location.pathname);
+        return;
+      }
+
+      if (!res.ok) {
+        // Revertir en caso de error
+        setActive(btn, isActive);
+      }
+    } catch {
+      setActive(btn, isActive);
+    }
+  });
+
+  initWishlist();
+</script>
+
+<style>
+  .wishlist-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    border-radius: 8px;
+    transition: color 0.15s, background 0.15s;
+    padding: 0;
+  }
+
+  .wishlist-btn:hover {
+    color: #ef4444;
+    background: #fee2e2;
+  }
+
+  .wishlist-btn[data-active="true"] {
+    color: #ef4444;
+  }
+
+  .wishlist-btn__icon--filled {
+    display: none;
+  }
+
+  .wishlist-btn[data-active="true"] .wishlist-btn__icon--empty {
+    display: none;
+  }
+
+  .wishlist-btn[data-active="true"] .wishlist-btn__icon--filled {
+    display: block;
+  }
+</style>

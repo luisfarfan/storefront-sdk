@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0",
+
+  "section_types": [
+    {
+      "key": "header",
+      "label": "Header",
+      "category": "navigation",
+      "attribute_schema": [
+        { "name": "logo",      "label": "Logo",              "type": "image",  "order": 1 },
+        { "name": "nav_links", "label": "Links de navegación","type": "array",  "order": 2,
+          "config": {
+            "item_fields": [
+              { "name": "label", "type": "text" },
+              { "name": "url",   "type": "text" }
+            ]
+          }
+        }
+      ]
+    },
+
+    {
+      "key": "hero",
+      "label": "Hero Principal",
+      "category": "content",
+      "attribute_schema": [
+        { "name": "image",       "label": "Imagen de fondo", "type": "image", "is_required": true, "order": 1 },
+        { "name": "headline",    "label": "Título",          "type": "text",  "localizable": true,  "order": 2 },
+        { "name": "subheadline", "label": "Subtítulo",       "type": "text",  "localizable": true,  "order": 3 },
+        { "name": "cta",         "label": "Botón CTA",       "type": "link",                        "order": 4 }
+      ]
+    },
+
+    {
+      "key": "product_grid",
+      "label": "Grilla de Productos",
+      "category": "commerce",
+      "attribute_schema": [
+        { "name": "headline", "label": "Título",    "type": "text",               "localizable": true, "order": 1 },
+        { "name": "products", "label": "Productos", "type": "smart_collection_id", "order": 2,
+          "config": { "allowed_smart_collection_types": ["product_list", "manual"] }
+        },
+        { "name": "columns",  "label": "Columnas",  "type": "number",             "order": 3,
+          "config": { "min": 2, "max": 5 }
+        }
+      ]
+    },
+
+    {
+      "key": "category_grid",
+      "label": "Grilla de Categorías",
+      "category": "commerce",
+      "attribute_schema": [
+        { "name": "headline",   "label": "Título",      "type": "text",               "localizable": true, "order": 1 },
+        { "name": "categories", "label": "Categorías",  "type": "smart_collection_id", "order": 2,
+          "config": { "allowed_smart_collection_types": ["category_list"] }
+        }
+      ]
+    },
+
+    {
+      "key": "search",
+      "label": "Búsqueda",
+      "category": "commerce",
+      "attribute_schema": [
+        { "name": "placeholder", "label": "Placeholder del buscador", "type": "text", "localizable": true, "order": 1 }
+      ]
+    },
+
+    {
+      "key": "footer",
+      "label": "Footer",
+      "category": "navigation",
+      "attribute_schema": [
+        { "name": "copyright", "label": "Texto de copyright", "type": "text",  "order": 1 },
+        { "name": "links",     "label": "Links del footer",   "type": "array", "order": 2,
+          "config": {
+            "item_fields": [
+              { "name": "label", "type": "text" },
+              { "name": "url",   "type": "text" }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+
+  "pages": [
+    {
+      "resolver_kind": "content_page",
+      "path": "/",
+      "label": "Home",
+      "scaffold_sections": [
+        { "section_type": "header",       "order": 1  },
+        { "section_type": "hero",         "order": 2  },
+        { "section_type": "product_grid", "order": 3  },
+        { "section_type": "category_grid","order": 4  },
+        { "section_type": "footer",       "order": 99 }
+      ]
+    },
+    {
+      "resolver_kind": "product_detail",
+      "label": "Detalle de Producto",
+      "scaffold_sections": [
+        { "section_type": "header", "order": 1  },
+        { "section_type": "footer", "order": 99 }
+      ]
+    },
+    {
+      "resolver_kind": "category_detail",
+      "label": "Categoría",
+      "scaffold_sections": [
+        { "section_type": "header",       "order": 1  },
+        { "section_type": "product_grid", "order": 2  },
+        { "section_type": "footer",       "order": 99 }
+      ]
+    },
+    {
+      "resolver_kind": "brand_detail",
+      "label": "Marca",
+      "scaffold_sections": [
+        { "section_type": "header",       "order": 1  },
+        { "section_type": "product_grid", "order": 2  },
+        { "section_type": "footer",       "order": 99 }
+      ]
+    },
+    {
+      "resolver_kind": "search",
+      "label": "Búsqueda",
+      "scaffold_sections": [
+        { "section_type": "header", "order": 1  },
+        { "section_type": "search", "order": 2  },
+        { "section_type": "footer", "order": 99 }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+---
+import { EditableSection } from '@proxima-io/storefront-builder-sdk';
+import type { CmsSection } from '@proxima-io/storefront-cms';
+import type { ProximaWebsiteResponse } from '@proxima-io/storefront-core';
+
+interface FooterLink {
+  label: string;
+  url: string;
+}
+
+interface Props {
+  section: CmsSection;
+  website: ProximaWebsiteResponse;
+}
+
+const { section, website } = Astro.props;
+const {
+  copyright,
+  links = [] as FooterLink[],
+} = section.attributes as {
+  copyright?: string;
+  links?: FooterLink[];
+};
+
+const year = new Date().getFullYear();
+const defaultCopyright = `© ${year} ${website.name}. Todos los derechos reservados.`;
+---
+
+<EditableSection {section}>
+  <footer class="site-footer">
+    <div class="site-footer__inner">
+      <div class="site-footer__links">
+        {(links as FooterLink[]).map(link => (
+          <a href={link.url} class="site-footer__link">{link.label}</a>
+        ))}
+      </div>
+      <p class="site-footer__copyright">
+        {(copyright as string) || defaultCopyright}
+      </p>
+    </div>
+  </footer>
+</EditableSection>
+
+<style>
+  .site-footer {
+    background: #111827;
+    color: #9ca3af;
+    padding: 2.5rem 0;
+  }
+  .site-footer__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    text-align: center;
+  }
+  .site-footer__links { display: flex; gap: 1.5rem; flex-wrap: wrap; justify-content: center; }
+  .site-footer__link {
+    color: #9ca3af;
+    text-decoration: none;
+    font-size: 0.875rem;
+    transition: color 0.15s;
+  }
+  .site-footer__link:hover { color: white; }
+  .site-footer__copyright { font-size: 0.8125rem; margin: 0; }
+</style>

@@ -1,0 +1,108 @@
+---
+import { EditableSection, EditableAttribute } from '@proxima-io/storefront-builder-sdk';
+import type { CmsSection } from '@proxima-io/storefront-cms';
+
+interface Props {
+  section: CmsSection;
+}
+
+const { section } = Astro.props;
+const {
+  image,
+  headline = '',
+  subheadline = '',
+  cta,
+} = section.attributes as {
+  image?: string;
+  headline?: string;
+  subheadline?: string;
+  cta?: { url: string; label?: string; target?: string };
+};
+---
+
+<EditableSection {section}>
+  <section
+    class="hero"
+    style={image ? `background-image: url(${image})` : ''}
+  >
+    <div class="hero__overlay" />
+    <div class="hero__content">
+      {headline && (
+        <EditableAttribute {section} attributeKey="headline">
+          <h1 class="hero__title">{headline}</h1>
+        </EditableAttribute>
+      )}
+
+      {subheadline && (
+        <EditableAttribute {section} attributeKey="subheadline">
+          <p class="hero__subtitle">{subheadline}</p>
+        </EditableAttribute>
+      )}
+
+      {cta?.url && (
+        <EditableAttribute {section} attributeKey="cta">
+          <a
+            href={cta.url}
+            target={cta.target ?? '_self'}
+            class="hero__cta"
+          >
+            {cta.label ?? 'Ver más'}
+          </a>
+        </EditableAttribute>
+      )}
+    </div>
+  </section>
+</EditableSection>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: 60vh;
+    background-size: cover;
+    background-position: center;
+    background-color: #111;
+    display: flex;
+    align-items: center;
+  }
+  .hero__overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+  }
+  .hero__content {
+    position: relative;
+    z-index: 1;
+    padding: 2rem 1.5rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .hero__title {
+    font-size: clamp(2rem, 5vw, 4rem);
+    font-weight: 800;
+    color: white;
+    margin: 0 0 1rem;
+    line-height: 1.1;
+  }
+  .hero__subtitle {
+    font-size: clamp(1rem, 2vw, 1.25rem);
+    color: rgba(255, 255, 255, 0.85);
+    margin: 0 0 2rem;
+    max-width: 560px;
+  }
+  .hero__cta {
+    display: inline-block;
+    padding: 0.875rem 2.5rem;
+    background: var(--proxima-primary, white);
+    color: var(--proxima-primary-contrast, #111);
+    font-weight: 600;
+    font-size: 1rem;
+    text-decoration: none;
+    border-radius: var(--proxima-radius, 8px);
+    transition: opacity 0.15s, transform 0.15s;
+  }
+  .hero__cta:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+</style>

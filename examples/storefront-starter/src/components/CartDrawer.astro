@@ -1,0 +1,287 @@
+---
+// CartDrawer — componente client-side para el carrito lateral
+// Se activa con el botón de carrito del header (#cart-toggle)
+---
+
+<div id="cart-drawer" class="cart-drawer" aria-hidden="true">
+  <div class="cart-drawer__backdrop" id="cart-backdrop"></div>
+  <div class="cart-drawer__panel" role="dialog" aria-label="Carrito de compras">
+    <div class="cart-drawer__header">
+      <h2 class="cart-drawer__title">Tu carrito</h2>
+      <button class="cart-drawer__close" id="cart-close" aria-label="Cerrar carrito">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 6 6 18M6 6l12 12"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="cart-drawer__body" id="cart-body">
+      <p class="cart-drawer__loading">Cargando...</p>
+    </div>
+
+    <div class="cart-drawer__footer" id="cart-footer" hidden>
+      <div class="cart-drawer__total">
+        <span>Total</span>
+        <strong id="cart-total">S/ 0.00</strong>
+      </div>
+      <a href="/checkout" class="cart-drawer__checkout-btn">
+        Ir al checkout
+      </a>
+    </div>
+  </div>
+</div>
+
+<script>
+  const drawer = document.getElementById('cart-drawer')!;
+  const body = document.getElementById('cart-body')!;
+  const footer = document.getElementById('cart-footer') as HTMLElement;
+  const totalEl = document.getElementById('cart-total')!;
+  const badge = document.getElementById('cart-badge') as HTMLElement;
+
+  function openDrawer() {
+    drawer.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    loadCart();
+  }
+
+  function closeDrawer() {
+    drawer.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  document.getElementById('cart-toggle')?.addEventListener('click', openDrawer);
+  document.getElementById('cart-close')?.addEventListener('click', closeDrawer);
+  document.getElementById('cart-backdrop')?.addEventListener('click', closeDrawer);
+
+  async function loadCart() {
+    body.innerHTML = '<p class="cart-drawer__loading">Cargando...</p>';
+
+    try {
+      const res = await fetch('/api/cart');
+      const cart = await res.json();
+
+      if (!cart.items || cart.items.length === 0) {
+        body.innerHTML = '<p class="cart-drawer__empty">Tu carrito está vacío.</p>';
+        footer.hidden = true;
+        updateBadge(0);
+        return;
+      }
+
+      body.innerHTML = cart.items.map((item: any) => `
+        <div class="cart-item" data-item-id="${item.id}">
+          <div class="cart-item__image">
+            ${item.image_url ? `<img src="${item.image_url}" alt="${item.name}" />` : ''}
+          </div>
+          <div class="cart-item__info">
+            <p class="cart-item__name">${item.name}</p>
+            ${item.variant_name ? `<p class="cart-item__variant">${item.variant_name}</p>` : ''}
+            <p class="cart-item__price">${item.price_formatted ?? item.price}</p>
+          </div>
+          <div class="cart-item__actions">
+            <span class="cart-item__qty">x${item.quantity}</span>
+            <button class="cart-item__remove" data-item-id="${item.id}" aria-label="Eliminar">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6 6 18M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+
+      totalEl.textContent = cart.total_formatted ?? `${cart.total}`;
+      footer.hidden = false;
+      updateBadge(cart.items.reduce((sum: number, i: any) => sum + i.quantity, 0));
+
+      // Listeners para eliminar items
+      body.querySelectorAll('.cart-item__remove').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const itemId = parseInt((btn as HTMLElement).dataset.itemId ?? '0');
+          await fetch('/api/cart/remove', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item_id: itemId }),
+          });
+          loadCart();
+        });
+      });
+
+    } catch {
+      body.innerHTML = '<p class="cart-drawer__error">Error al cargar el carrito.</p>';
+    }
+  }
+
+  function updateBadge(count: number) {
+    if (badge) {
+      badge.textContent = String(count);
+      badge.hidden = count === 0;
+    }
+    const toggle = document.getElementById('cart-toggle');
+    if (toggle) toggle.dataset.cartCount = String(count);
+  }
+
+  // Escuchar evento global para actualizar el badge cuando se añade un producto
+  window.addEventListener('proxima:cart:updated', () => {
+    fetch('/api/cart')
+      .then(r => r.json())
+      .then(cart => {
+        const total = cart.items?.reduce((s: number, i: any) => s + i.quantity, 0) ?? 0;
+        updateBadge(total);
+      })
+      .catch(() => {});
+  });
+</script>
+
+<script>
+  // Listener global para botones "Agregar al carrito"
+  document.addEventListener('click', async (e) => {
+    const btn = (e.target as Element).closest('[data-variant-id]') as HTMLElement | null;
+    if (!btn) return;
+
+    const variantId = parseInt(btn.dataset.variantId ?? '0');
+    if (!variantId) return;
+
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Agregando...';
+
+    try {
+      const res = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ variant_id: variantId, quantity: 1 }),
+      });
+
+      if (res.ok) {
+        btn.textContent = '¡Agregado!';
+        window.dispatchEvent(new Event('proxima:cart:updated'));
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 1500);
+      } else {
+        btn.textContent = 'Error';
+        btn.disabled = false;
+      }
+    } catch {
+      btn.textContent = originalText ?? 'Agregar al carrito';
+      btn.disabled = false;
+    }
+  });
+</script>
+
+<style>
+  .cart-drawer {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    pointer-events: none;
+  }
+  .cart-drawer[aria-hidden="false"] { pointer-events: auto; }
+  .cart-drawer__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0);
+    transition: background 0.3s;
+  }
+  .cart-drawer[aria-hidden="false"] .cart-drawer__backdrop {
+    background: rgba(0,0,0,0.5);
+  }
+  .cart-drawer__panel {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(400px, 100vw);
+    background: white;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: -4px 0 24px rgba(0,0,0,0.12);
+  }
+  .cart-drawer[aria-hidden="false"] .cart-drawer__panel { transform: translateX(0); }
+  .cart-drawer__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .cart-drawer__title { font-size: 1.125rem; font-weight: 700; margin: 0; }
+  .cart-drawer__close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .cart-drawer__close:hover { background: #f3f4f6; }
+  .cart-drawer__body { flex: 1; overflow-y: auto; padding: 1rem 1.5rem; }
+  .cart-drawer__loading,
+  .cart-drawer__empty,
+  .cart-drawer__error { text-align: center; color: #9ca3af; padding: 2rem 0; }
+  .cart-item {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  .cart-item__image {
+    width: 72px;
+    height: 72px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f9fafb;
+    flex-shrink: 0;
+  }
+  .cart-item__image img { width: 100%; height: 100%; object-fit: cover; }
+  .cart-item__info { flex: 1; }
+  .cart-item__name { font-size: 0.875rem; font-weight: 500; margin: 0 0 0.25rem; }
+  .cart-item__variant { font-size: 0.75rem; color: #9ca3af; margin: 0 0 0.25rem; }
+  .cart-item__price { font-size: 0.9375rem; font-weight: 700; margin: 0; }
+  .cart-item__actions { display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem; }
+  .cart-item__qty { font-size: 0.875rem; color: #6b7280; }
+  .cart-item__remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #9ca3af;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .cart-item__remove:hover { color: #ef4444; background: #fee2e2; }
+  .cart-drawer__footer {
+    padding: 1.25rem 1.5rem;
+    border-top: 1px solid #e5e7eb;
+  }
+  .cart-drawer__total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    font-size: 1rem;
+  }
+  .cart-drawer__total strong { font-size: 1.25rem; }
+  .cart-drawer__checkout-btn {
+    display: block;
+    width: 100%;
+    padding: 0.875rem;
+    background: var(--proxima-primary, #111);
+    color: white;
+    text-align: center;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: var(--proxima-radius, 8px);
+    transition: opacity 0.15s;
+  }
+  .cart-drawer__checkout-btn:hover { opacity: 0.85; }
+</style>

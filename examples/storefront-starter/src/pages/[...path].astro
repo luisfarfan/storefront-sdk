@@ -1,0 +1,46 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import { fetchProximaComposition } from '@proxima-io/storefront-core';
+import { getWebsite, proximaConfig } from '../lib/proxima';
+import { SECTION_MAP } from '../sections';
+
+const website = await getWebsite();
+const path = '/' + (Astro.params.path ?? '');
+
+let composition;
+try {
+  composition = await fetchProximaComposition({ ...proximaConfig, path }, website);
+} catch (e: any) {
+  if (e.status === 404) return Astro.redirect('/404');
+  throw e;
+}
+
+const { sections, seo, resolver_kind, resolved_data } = composition;
+---
+
+<BaseLayout {website} {seo}>
+  {sections.map(section => {
+    const Component = SECTION_MAP[section.type];
+    if (!Component) {
+      // En desarrollo, mostrar un placeholder para secciones no implementadas
+      if (import.meta.env.DEV) {
+        return (
+          <div style="padding:2rem;background:#fef3c7;border:1px dashed #f59e0b;margin:1rem;">
+            <strong>⚠️ Sección no implementada:</strong> <code>{section.type}</code>
+            <br />
+            <small>Crear <code>src/sections/{section.type.replace(/_/g,'').replace(/^\w/, c => c.toUpperCase())}Section.astro</code> y añadir al SECTION_MAP</small>
+          </div>
+        );
+      }
+      return null;
+    }
+    return (
+      <Component
+        section={section}
+        website={website}
+        resolverKind={resolver_kind}
+        resolvedData={resolved_data}
+      />
+    );
+  })}
+</BaseLayout>

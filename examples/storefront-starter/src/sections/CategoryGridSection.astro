@@ -1,0 +1,120 @@
+---
+import { EditableSection, EditableAttribute } from '@proxima-io/storefront-builder-sdk';
+import type { CmsSection } from '@proxima-io/storefront-cms';
+
+interface CategoryItem {
+  id: number;
+  slug: string;
+  name: string;
+  image_url?: string;
+  parent_id?: number;
+}
+
+interface SmartCollectionResult {
+  type: string;
+  items: CategoryItem[];
+  meta: { count: number; limit: number; returned: number };
+}
+
+interface Props {
+  section: CmsSection;
+}
+
+const { section } = Astro.props;
+const {
+  headline = '',
+  categories,
+} = section.attributes as {
+  headline?: string;
+  categories?: SmartCollectionResult;
+};
+
+const items = categories?.items ?? [];
+---
+
+<EditableSection {section}>
+  <section class="category-grid-section">
+    <div class="category-grid-section__inner">
+      {headline && (
+        <EditableAttribute {section} attributeKey="headline">
+          <h2 class="category-grid-section__title">{headline}</h2>
+        </EditableAttribute>
+      )}
+
+      {items.length > 0 ? (
+        <div class="category-grid">
+          {items.map(cat => (
+            <a href={`/categoria/${cat.slug}`} class="category-card">
+              <div class="category-card__image">
+                {cat.image_url
+                  ? <img src={cat.image_url} alt={cat.name} loading="lazy" />
+                  : <div class="category-card__image-placeholder" />
+                }
+              </div>
+              <span class="category-card__name">{cat.name}</span>
+            </a>
+          ))}
+        </div>
+      ) : (
+        <p class="category-grid-section__empty">Categorías próximamente.</p>
+      )}
+    </div>
+  </section>
+</EditableSection>
+
+<style>
+  .category-grid-section { padding: 4rem 0; background: #f9fafb; }
+  .category-grid-section__inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+  }
+  .category-grid-section__title {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 2rem;
+  }
+  .category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1rem;
+  }
+  .category-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    text-decoration: none;
+    color: #111827;
+    text-align: center;
+    padding: 1.5rem 1rem;
+    background: white;
+    border-radius: var(--proxima-radius, 12px);
+    border: 1px solid #e5e7eb;
+    transition: box-shadow 0.2s, transform 0.2s;
+  }
+  .category-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    transform: translateY(-2px);
+  }
+  .category-card__image {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #f3f4f6;
+  }
+  .category-card__image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .category-card__image-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #e5e7eb;
+  }
+  .category-card__name { font-size: 0.875rem; font-weight: 500; }
+  .category-grid-section__empty { color: #9ca3af; text-align: center; padding: 3rem 0; }
+</style>

@@ -1,0 +1,23 @@
+{
+  "name": "proxima-storefront-starter",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Proxima storefront starter for Astro",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/node": "^8.0.0",
+    "@proxima-io/storefront-builder-sdk": "workspace:*",
+    "@proxima-io/storefront-cms": "workspace:*",
+    "@proxima-io/storefront-commerce": "workspace:*",
+    "@proxima-io/storefront-core": "workspace:*",
+    "astro": "^4.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

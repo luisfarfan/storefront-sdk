@@ -1,0 +1,75 @@
+---
+import { CmsPreviewBridge } from '@proxima-io/storefront-builder-sdk';
+import { isCmsPreview } from '@proxima-io/storefront-cms';
+import type { ProximaWebsiteResponse } from '@proxima-io/storefront-core';
+import CartDrawer from '../components/CartDrawer.astro';
+
+interface Props {
+  website: ProximaWebsiteResponse;
+  seo?: {
+    meta_title?: string;
+    meta_description?: string;
+    og_image_url?: string;
+    robots?: string;
+  };
+}
+
+const { website, seo } = Astro.props;
+const isPreview = isCmsPreview(Astro.url);
+
+function buildCssVars(tokens: Record<string, string> | undefined): string {
+  if (!tokens) return '';
+  return Object.entries(tokens)
+    .map(([k, v]) => `--proxima-${k}: ${v}`)
+    .join('; ');
+}
+
+const themeVars = buildCssVars(website.theme_tokens as Record<string, string>);
+---
+
+<!doctype html>
+<html lang={website.locale}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{seo?.meta_title ?? website.name}</title>
+    {seo?.meta_description && (
+      <meta name="description" content={seo.meta_description} />
+    )}
+    {seo?.og_image_url && (
+      <meta property="og:image" content={seo.og_image_url} />
+    )}
+    <meta name="robots" content={seo?.robots ?? 'index, follow'} />
+    {themeVars && <style set:html={`:root { ${themeVars} }`} />}
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      img { max-width: 100%; height: auto; }
+    </style>
+  </head>
+  <body>
+    <!-- Builder bridge: solo activo en preview mode, noop en producción -->
+    <CmsPreviewBridge enabled={isPreview} />
+
+    <slot />
+
+    <!-- Carrito lateral -->
+    <CartDrawer />
+
+    <!-- Variables globales para scripts client-side -->
+    <script
+      define:vars={{
+        businessId: website.business_id,
+        currency: (website as any).currency ?? 'USD',
+        apiUrl: import.meta.env.PUBLIC_PROXIMA_API_URL,
+        locale: website.locale,
+      }}
+    >
+      window.__PROXIMA_BUSINESS_ID__ = businessId;
+      window.__PROXIMA_CURRENCY__ = currency;
+
+      // Analytics
+      import(apiUrl + '/static/analytics.js').catch(() => {});
+    </script>
+  </body>
+</html>
