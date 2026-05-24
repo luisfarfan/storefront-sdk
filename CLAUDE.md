@@ -85,6 +85,27 @@ text | rich_text | image | boolean | number | link | object | array | smart_coll
 
 ---
 
+## `ProximaApiConfig` — campos disponibles
+
+```ts
+interface ProximaApiConfig {
+  baseUrl:      string   // URL base de la API
+  domain:       string   // Dominio del website
+  path:         string   // Path actual de la página
+  serviceKey?:  string   // Bearer token (server-side)
+  websiteId?:   string   // UUID del website (override)
+  businessId?:  string   // UUID del business (override)
+  variantId?:   string   // UUID del content variant (campaign preview)
+  previewToken? string   // Token del rotate endpoint (requerido con variantId)
+}
+```
+
+`variantId` + `previewToken` son opcionales. Cuando están presentes,
+`fetchProximaComposition` los añade como `?variant_id=&preview_token=` y la API
+devuelve el snapshot del campaign en lugar del contenido live.
+
+---
+
 ## Variables de entorno (todo storefront necesita esto)
 
 ```env

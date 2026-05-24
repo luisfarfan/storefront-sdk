@@ -279,6 +279,73 @@ puedes usar solo `EditableSection` sin `EditableAttribute`:
 
 ---
 
+---
+
+## Preview de campaigns (content variants)
+
+El Builder puede cargar el iframe con un `variant_id` para que el comercio vea
+una campaña en draft antes de publicarla (e.g. "Día de la Madre").
+
+### URL que envía el Builder
+
+```
+{storefront_url}{path}?cms_preview=1&api=1
+  &builder_business_id={uuid}
+  &builder_website_id={uuid}
+  &builder_origin={origin}
+  &variant_id={uuid}         ← presente solo en campaign preview
+  &preview_token={secret}    ← presente solo en campaign preview
+```
+
+Cuando `variant_id` **no está**, es un preview de edición live normal.
+Cuando `variant_id` **sí está**, el storefront debe servir el snapshot del campaign.
+
+### Cómo pasar los params a la composición
+
+`fetchProximaComposition` acepta `variantId` y `previewToken` en `ProximaApiConfig`:
+
+```ts
+import { fetchProximaComposition } from '@proxima-io/storefront-core';
+
+const url = new URL(Astro.request.url);
+const variantId    = url.searchParams.get("variant_id")    ?? undefined;
+const previewToken = url.searchParams.get("preview_token") ?? undefined;
+
+// Si hay variant_id sin preview_token → mostrar error, no llamar a la API
+if (variantId && !previewToken) {
+  // renderizar error UI
+}
+
+const composition = await fetchProximaComposition(
+  { ...proximaConfig, path, variantId, previewToken },
+  website
+);
+// La API devuelve el mismo PageCompositionResponse, pero con valores del snapshot
+```
+
+Reglas de la API:
+- `variant_id` + token válido → composición desde el **snapshot del campaign**
+- `variant_id` + token inválido/ausente → **401** `INVALID_PREVIEW_TOKEN`
+- Sin `variant_id` → composición live normal
+
+### Comportamientos requeridos con variant preview
+
+| Qué | Cómo |
+|-----|------|
+| No cachear | `Cache-Control: no-store` cuando `variantId` está presente |
+| No indexar | `<meta name="robots" content="noindex">` |
+| No persistir el token | Nunca a localStorage/sessionStorage |
+| Mostrar banner | "Vista previa de campaña — no publicada" |
+| Preservar params en navegación | `variant_id` y `preview_token` deben seguir en cada path interno |
+| Error 401 | Mensaje claro: "Enlace expirado — reabrir desde el Builder" |
+
+### El postMessage bridge sigue funcionando
+
+`cms:ready`, selección de secciones, `cms:apply-draft`, navigate mode — todo
+funciona igual en campaign preview. Los `data-cms-editable` no se tocan.
+
+---
+
 ## Checklist de Builder Integration
 
 - [ ] `CmsPreviewBridge` está en `BaseLayout.astro` con `enabled={isPreview}`
@@ -287,3 +354,6 @@ puedes usar solo `EditableSection` sin `EditableAttribute`:
 - [ ] Cada campo editable tiene `<EditableAttribute {section} attributeKey="...">`
 - [ ] Cada item de array tiene `<EditableItem {section} attributeKey="..." itemIndex={i}>`
 - [ ] En producción, no hay overhead del builder (todo es noop)
+- [ ] Campaign preview: `variantId` + `previewToken` se pasan a `fetchProximaComposition`
+- [ ] `variant_id` sin `preview_token` falla cerrado (error UI, no silent fallback)
+- [ ] URLs con `preview_token` tienen `Cache-Control: no-store` y `noindex`
