@@ -1619,6 +1619,18 @@ export async function processRemoveCartItem(
 }
 
 /**
+ * Resolve the website then update the quantity of a variant in the cart.
+ * Token is optional (guest cart supported).
+ */
+export async function processUpdateCartItem(
+  env: BuyerServerEnv,
+  params: { token?: string | null; variantId: number; quantity: number }
+): Promise<Cart> {
+  const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
+  return updateCartItem({ baseUrl: env.apiUrl }, website, { token: params.token, variantId: params.variantId, quantity: params.quantity });
+}
+
+/**
  * Resolve the website then fetch the current cart.
  * Token is optional (guest cart supported).
  */
