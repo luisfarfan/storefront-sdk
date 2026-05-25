@@ -872,6 +872,8 @@ export interface BuyerRegisterParams {
   /** Custom fields configured by the merchant — keyed by field name. */
   metadata?: Record<string, any>;
   address?: AddressInRegistration | null;
+  /** Cloudflare Turnstile token from the widget — required when API has TURNSTILE_ENABLED=true */
+  captchaToken?: string | null;
 }
 
 /** A single field that was missing in the registration request. */
@@ -1333,6 +1335,7 @@ export async function registerBuyer(
   if (params.registrationSource !== undefined)  body.registration_source = params.registrationSource;
   if (params.metadata !== undefined)            body.metadata = params.metadata;
   if (params.address !== undefined)             body.address = params.address;
+  if (params.captchaToken)                      body.captcha_token = params.captchaToken;
 
   const res = await fetch(url, {
     method: "POST",
@@ -1369,13 +1372,15 @@ export async function registerBuyer(
 export async function loginBuyer(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: Pick<ProximaWebsiteResponse, "business_id">,
-  params: { email: string; password: string }
+  params: { email: string; password: string; captchaToken?: string | null }
 ): Promise<BuyerSession> {
   const url = new URL("/api/v1/store/auth/login", config.baseUrl);
+  const body: Record<string, any> = { email: params.email, password: params.password };
+  if (params.captchaToken) body.captcha_token = params.captchaToken;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Business-ID": website.business_id },
-    body: JSON.stringify({ email: params.email, password: params.password }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
   return res.json();
@@ -1480,13 +1485,15 @@ export async function updateBuyerProfile(
 export async function forgotPassword(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: Pick<ProximaWebsiteResponse, "business_id">,
-  params: { email: string }
+  params: { email: string; captchaToken?: string | null }
 ): Promise<void> {
   const url = new URL("/api/v1/store/auth/forgot-password", config.baseUrl);
+  const body: Record<string, any> = { email: params.email };
+  if (params.captchaToken) body.captcha_token = params.captchaToken;
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Business-ID": website.business_id },
-    body: JSON.stringify({ email: params.email }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -2109,10 +2116,10 @@ export async function removeFromWishlist(
  */
 export async function processBuyerLogin(
   env: BuyerServerEnv,
-  params: { email: string; password: string; next?: string }
+  params: { email: string; password: string; next?: string; captchaToken?: string | null }
 ): Promise<{ access_token: string; refresh_token: string | null; next: string }> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-  const session = await loginBuyer({ baseUrl: env.apiUrl }, website, { email: params.email, password: params.password });
+  const session = await loginBuyer({ baseUrl: env.apiUrl }, website, { email: params.email, password: params.password, captchaToken: params.captchaToken });
   return { access_token: session.access_token, refresh_token: session.refresh_token ?? null, next: params.next || "/" };
 }
 
@@ -2167,11 +2174,11 @@ export async function processRefreshToken(
  */
 export async function processForgotPassword(
   env: BuyerServerEnv,
-  params: { email: string }
+  params: { email: string; captchaToken?: string | null }
 ): Promise<void> {
   try {
     const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-    await forgotPassword({ baseUrl: env.apiUrl }, website, { email: params.email });
+    await forgotPassword({ baseUrl: env.apiUrl }, website, { email: params.email, captchaToken: params.captchaToken });
   } catch {
     // Never expose whether the email exists
   }
