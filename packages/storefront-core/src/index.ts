@@ -87,6 +87,552 @@ export interface ProximaProductListResponse {
   size: number;
 }
 
+// ---------------------------------------------------------------------------
+// SEO utilities
+// ---------------------------------------------------------------------------
+
+/**
+ * Fully resolved SEO metadata for a single page.
+ * Produced by `buildPageSeo()` — pass directly to `SiteLayout.astro`.
+ */
+export interface PageSeoMeta {
+  /** `<title>` tag content */
+  title: string;
+  /** `meta[name="description"]` */
+  description: string;
+  /** og:title */
+  ogTitle: string;
+  /** og:description */
+  ogDescription: string;
+  /** og:image and twitter:image — null when no image is available */
+  ogImage: string | null;
+  /** og:type — "website" | "product" */
+  ogType: string;
+  /** og:site_name */
+  ogSiteName: string;
+  /** og:url and link[rel="canonical"] */
+  canonicalUrl: string;
+  /** meta[name="robots"] — "index, follow" | "noindex, nofollow" */
+  robots: string;
+  /** twitter:card */
+  twitterCard: string;
+  /** twitter:site — "@handle" or null */
+  twitterSite: string | null;
+  /** twitter:image — mirrors ogImage */
+  twitterImage: string | null;
+  /** link[rel="icon"] — null when not set */
+  faviconUrl: string | null;
+}
+
+/**
+ * Minimal website surface required by `buildPageSeo()`.
+ * Both `ProximaWebsiteResponse` and the storefront's `ResolvedWebsite` satisfy this.
+ */
+export interface PageSeoWebsiteMeta {
+  name: string;
+  og_image_url?: string | null;
+  favicon_url?: string | null;
+  twitter_handle?: string | null;
+}
+
+/**
+ * Build fully resolved SEO metadata for a page.
+ *
+ * Data priority:
+ *   1. Admin-set `PageSEO` fields in `composition.seo` (explicit overrides)
+ *   2. Entity-derived data in `composition.seo.entity_name` / `entity_image` (auto-populated by API)
+ *   3. Website-level defaults (`website.og_image_url`, etc.)
+ *   4. Hard fallbacks (empty strings)
+ *
+ * @param seoData   The `seo` object from `ProximaCompositionResponse` (may be null)
+ * @param website   Website-level SEO fields
+ * @param locale    Locale code for resolving localized strings (e.g. "es")
+ * @param currentUrl  Absolute URL of the current page — used as canonical fallback
+ *
+ * @example
+ * const seo = buildPageSeo(composition.seo, website, website.locale, canonicalUrl);
+ * // → pass to <SiteLayout seo={seo} />
+ */
+export function buildPageSeo(
+  seoData: Record<string, any> | null | undefined,
+  website: PageSeoWebsiteMeta,
+  locale: string,
+  currentUrl: string
+): PageSeoMeta {
+  /** Resolve a value that may be a localized dict `{ es: "...", en: "..." }` or a plain string */
+  function resolveLocalized(value: unknown): string | null {
+    if (!value) return null;
+    if (typeof value === "string") return value || null;
+    if (typeof value === "object") {
+      const map = value as Record<string, string>;
+      return map[locale] ?? map["es"] ?? Object.values(map).find(Boolean) ?? null;
+    }
+    return null;
+  }
+
+  const entityName = (seoData?.entity_name as string | null | undefined) ?? null;
+  const entityImage = (seoData?.entity_image as string | null | undefined) ?? null;
+
+  // Title: admin-set > entity name + site name > site name
+  const adminTitle = resolveLocalized(seoData?.meta_title);
+  const title = adminTitle ?? (entityName ? `${entityName} | ${website.name}` : website.name);
+
+  // Description: admin-set > entity-based fallback > site name
+  const adminDescription = resolveLocalized(seoData?.meta_description);
+  const description =
+    adminDescription ??
+    (entityName ? `${entityName} en ${website.name}` : website.name);
+
+  // OG image: admin-set > entity image > website og_image_url
+  const ogImage =
+    (seoData?.og_image as string | null | undefined) ??
+    entityImage ??
+    (website.og_image_url ?? null);
+
+  const ogType = (seoData?.og_type as string | null | undefined) ?? "website";
+  const canonicalUrl = (seoData?.canonical_url as string | null | undefined) ?? currentUrl;
+  const robots =
+    (seoData?.robots as string | null | undefined) === "noindex"
+      ? "noindex, nofollow"
+      : "index, follow";
+
+  const rawHandle = website.twitter_handle ?? null;
+  const twitterSite = rawHandle ? `@${rawHandle.replace(/^@/, "")}` : null;
+
+  return {
+    title,
+    description,
+    ogTitle: title,
+    ogDescription: description,
+    ogImage,
+    ogType,
+    ogSiteName: website.name,
+    canonicalUrl,
+    robots,
+    twitterCard: "summary_large_image",
+    twitterSite,
+    twitterImage: ogImage,
+    faviconUrl: website.favicon_url ?? null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// JSON-LD builders — schema.org structured data
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal website surface required by the JSON-LD builders.
+ * Both `ProximaWebsiteResponse` and the storefront's `ResolvedWebsite` satisfy this.
+ */
+export interface JsonLdWebsiteMeta {
+  name: string;
+  domain: string;
+  logo_url?: string | null;
+  twitter_handle?: string | null;
+}
+
+/**
+ * Minimal product surface required by `buildProductJsonLd()`.
+ */
+export interface JsonLdProductMeta {
+  name: string;
+  slug: string;
+  description?: string | null;
+  image?: string | null;
+  images?: (string | null | undefined)[] | null;
+  sku?: string | null;
+  brand?: string | null;
+  productId?: number | string | null;
+  priceRaw: number;
+  compareAtPrice?: number | null;
+  inStock?: boolean | null;
+}
+
+/**
+ * A single breadcrumb item.
+ */
+export interface BreadcrumbItem {
+  label: string;
+  /** Relative or absolute href — omit for the last (current) item */
+  href?: string;
+}
+
+/**
+ * Build a `WebSite` JSON-LD object.
+ * Enables Google's Search Action box in SERPs.
+ *
+ * @example
+ * <script type="application/ld+json" set:html={JSON.stringify(buildWebSiteJsonLd(website))} />
+ */
+export function buildWebSiteJsonLd(website: JsonLdWebsiteMeta): Record<string, any> {
+  const siteUrl = `https://${website.domain}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": website.name,
+    "url": `${siteUrl}/`,
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": `${siteUrl}/buscar?q={search_term_string}`,
+      },
+      "query-input": "required name=search_term_string",
+    },
+  };
+}
+
+/**
+ * Build an `Organization` JSON-LD object.
+ * Returns `null` when `website.logo_url` is absent (Google ignores logo-less org markup).
+ *
+ * @example
+ * {orgJsonLd && <script type="application/ld+json" set:html={JSON.stringify(orgJsonLd)} />}
+ */
+export function buildOrganizationJsonLd(
+  website: JsonLdWebsiteMeta
+): Record<string, any> | null {
+  if (!website.logo_url) return null;
+  const siteUrl = `https://${website.domain}`;
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": website.name,
+    "url": `${siteUrl}/`,
+    "logo": { "@type": "ImageObject", "url": website.logo_url },
+  };
+}
+
+/**
+ * Build a `Product` JSON-LD object for a product detail page.
+ * Includes `Offer` with pricing, currency, and availability.
+ *
+ * @example
+ * <script type="application/ld+json" set:html={JSON.stringify(buildProductJsonLd(product, website))} />
+ */
+export function buildProductJsonLd(
+  product: JsonLdProductMeta,
+  website: { domain: string; currency: string }
+): Record<string, any> {
+  const siteUrl = `https://${website.domain}`;
+  const productUrl = `${siteUrl}/producto/${product.slug}`;
+
+  // Deduplicated image list: primary first, then extras
+  const images = [
+    product.image,
+    ...(product.images?.filter((img) => img && img !== product.image) ?? []),
+  ].filter(Boolean) as string[];
+
+  const result: Record<string, any> = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": product.name,
+    "image": images.length === 1 ? images[0] : images,
+    "offers": {
+      "@type": "Offer",
+      "url": productUrl,
+      "price": product.priceRaw,
+      "priceCurrency": website.currency,
+      "availability":
+        product.inStock === false
+          ? "https://schema.org/OutOfStock"
+          : "https://schema.org/InStock",
+    },
+  };
+
+  if (product.description) result["description"] = product.description;
+  if (product.sku) result["sku"] = product.sku;
+  if (product.productId != null) result["identifier"] = String(product.productId);
+  if (product.brand) result["brand"] = { "@type": "Brand", "name": product.brand };
+
+  // Strikethrough price — only when compare-at is higher than current
+  if (product.compareAtPrice && product.compareAtPrice > product.priceRaw) {
+    result["offers"]["priceSpecification"] = {
+      "@type": "PriceSpecification",
+      "price": product.compareAtPrice,
+      "priceCurrency": website.currency,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Build a `BreadcrumbList` JSON-LD object.
+ *
+ * @param items  Array of breadcrumb steps.  The last item typically has no `href`.
+ * @param siteUrl  Absolute site URL, e.g. `https://example.com`
+ *
+ * @example
+ * const crumbs = buildBreadcrumbJsonLd(
+ *   [{ label: "Inicio", href: "/" }, { label: "Zapatos", href: "/categoria/zapatos" }, { label: "Nike Air Max" }],
+ *   `https://${website.domain}`
+ * );
+ * <script type="application/ld+json" set:html={JSON.stringify(crumbs)} />
+ */
+export function buildBreadcrumbJsonLd(
+  items: BreadcrumbItem[],
+  siteUrl: string
+): Record<string, any> {
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": items.map((item, i) => ({
+      "@type": "ListItem",
+      "position": i + 1,
+      "name": item.label,
+      ...(item.href
+        ? { "item": item.href.startsWith("http") ? item.href : `${siteUrl}${item.href}` }
+        : {}),
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Sitemap + robots.txt generators
+// ---------------------------------------------------------------------------
+
+/** Minimal website surface needed by the sitemap / robots generators */
+export interface SitemapWebsiteMeta {
+  domain: string;
+  pages?: Array<{
+    resolver_kind: string;
+    path?: string | null;
+  }> | null;
+}
+
+/** Private resolver kinds that must never appear in a sitemap */
+const SITEMAP_PRIVATE_KINDS = new Set([
+  "cart",
+  "checkout",
+  "buyer_login",
+  "buyer_account",
+  "buyer_register",
+  "buyer_password_reset",
+  "order_list",
+  "order_detail",
+  "product_compare",
+]);
+
+function _xmlEscape(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function _urlEntry(
+  loc: string,
+  priority = "0.7",
+  changefreq = "weekly",
+  lastmod?: string
+): string {
+  const lines = [
+    `  <url>`,
+    `    <loc>${_xmlEscape(loc)}</loc>`,
+    `    <changefreq>${changefreq}</changefreq>`,
+    `    <priority>${priority}</priority>`,
+  ];
+  if (lastmod) lines.push(`    <lastmod>${lastmod}</lastmod>`);
+  lines.push(`  </url>`);
+  return lines.join("\n");
+}
+
+/**
+ * Generate a complete `sitemap.xml` for a storefront.
+ *
+ * Includes:
+ *  1. Content pages from the website manifest (priority 1.0 for home, 0.8 for others)
+ *  2. Category pages from the recursive nav tree (priority 0.8)
+ *  3. Brand pages from the brands directory (priority 0.7)
+ *  4. Product pages — paginated up to `maxProducts` (priority 0.9)
+ *
+ * All entries use today's date as `lastmod`.
+ *
+ * @param website  Resolved website object (domain + pages array)
+ * @param apiUrl   Base URL of the Proxima API (e.g. `http://localhost:8000`)
+ * @param options  Optional overrides: pageSize (default 60), maxProducts (default 3000)
+ *
+ * @example
+ * // apps/{slug}/src/pages/sitemap.xml.ts
+ * import type { APIRoute } from "astro";
+ * import { resolveWebsiteOnly } from "@/lib/resolver";
+ * import { generateSitemapXml } from "@proxima-io/storefront-core";
+ *
+ * export const GET: APIRoute = async () => {
+ *   const website = await resolveWebsiteOnly();
+ *   const xml = await generateSitemapXml(website, import.meta.env.PROXIMA_API_URL ?? "http://localhost:8000");
+ *   return new Response(xml, {
+ *     headers: { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400" },
+ *   });
+ * };
+ */
+export async function generateSitemapXml(
+  website: SitemapWebsiteMeta,
+  apiUrl: string,
+  options: { pageSize?: number; maxProducts?: number } = {}
+): Promise<string> {
+  const PAGE_SIZE = Math.min(60, options.pageSize ?? 60);
+  const MAX_PRODUCTS = options.maxProducts ?? 3000;
+  const MAX_PAGES = Math.ceil(MAX_PRODUCTS / PAGE_SIZE);
+  const TODAY = new Date().toISOString().split("T")[0];
+  const siteUrl = `https://${website.domain}`;
+  const entries: string[] = [];
+
+  // 1. Content pages from the website manifest
+  for (const page of website.pages ?? []) {
+    if (SITEMAP_PRIVATE_KINDS.has(page.resolver_kind)) continue;
+    if (page.resolver_kind === "content_page" && page.path) {
+      const priority = page.path === "/" ? "1.0" : "0.8";
+      const changefreq = page.path === "/" ? "daily" : "weekly";
+      entries.push(_urlEntry(`${siteUrl}${page.path}`, priority, changefreq, TODAY));
+    }
+  }
+
+  // 2. Category pages (recursive nav tree)
+  try {
+    // Lazy import to avoid circular dependency — fetchCategoryNavTree is defined below
+    const tree = await fetchCategoryNavTree({ baseUrl: apiUrl }, website as any);
+    function collectHrefs(nodes: typeof tree.nodes) {
+      for (const node of nodes) {
+        entries.push(_urlEntry(`${siteUrl}${node.href}`, "0.8", "daily", TODAY));
+        if (node.children.length > 0) collectHrefs(node.children);
+      }
+    }
+    collectHrefs(tree.nodes);
+  } catch {
+    /* API offline — skip category URLs */
+  }
+
+  // 3. Brand pages
+  try {
+    const brandsResult = await fetchBrandsDirectory({ baseUrl: apiUrl }, website as any);
+    for (const brand of brandsResult.items) {
+      entries.push(_urlEntry(`${siteUrl}${brand.href}`, "0.7", "weekly", TODAY));
+    }
+  } catch {
+    /* API offline — skip brand URLs */
+  }
+
+  // 4. Product pages (paginated)
+  try {
+    let currentPage = 1;
+    let totalPages = 1;
+    while (currentPage <= totalPages && currentPage <= MAX_PAGES) {
+      const result = await fetchStorefrontProducts({ baseUrl: apiUrl }, website as any, {
+        page: currentPage,
+        pageSize: PAGE_SIZE,
+      });
+      for (const product of result.items) {
+        entries.push(_urlEntry(`${siteUrl}/producto/${product.slug}`, "0.9", "weekly", TODAY));
+      }
+      totalPages = result.pagination.total_pages;
+      currentPage++;
+    }
+  } catch {
+    /* API offline — skip product URLs */
+  }
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    ...entries,
+    "</urlset>",
+  ].join("\n");
+}
+
+/**
+ * Generate a `robots.txt` for a storefront.
+ *
+ * Blocks all private buyer routes and API paths.
+ * Adds a `Sitemap:` directive pointing to `{siteUrl}/sitemap.xml`.
+ *
+ * @example
+ * // apps/{slug}/src/pages/robots.txt.ts
+ * import type { APIRoute } from "astro";
+ * import { resolveWebsiteOnly } from "@/lib/resolver";
+ * import { generateRobotsTxt } from "@proxima-io/storefront-core";
+ *
+ * export const GET: APIRoute = async () => {
+ *   const website = await resolveWebsiteOnly();
+ *   return new Response(generateRobotsTxt(website), {
+ *     headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "public, max-age=86400" },
+ *   });
+ * };
+ */
+export function generateRobotsTxt(website: { domain: string }): string {
+  const siteUrl = `https://${website.domain}`;
+  return [
+    "User-agent: *",
+    "Allow: /",
+    "",
+    "Disallow: /cuenta",
+    "Disallow: /carrito",
+    "Disallow: /checkout",
+    "Disallow: /api/",
+    "Disallow: /dev/",
+    "",
+    `Sitemap: ${siteUrl}/sitemap.xml`,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// IndexNow — real-time URL change notifications
+// ---------------------------------------------------------------------------
+
+/**
+ * Submit a list of changed URLs to the IndexNow API.
+ *
+ * IndexNow notifies Bing, Yandex, and (increasingly) Google about new or
+ * updated pages so they are re-crawled within seconds instead of waiting for
+ * the next sitemap crawl.
+ *
+ * **Setup (one-time per storefront):**
+ * 1. Generate or reuse the key from `PROXIMA_INDEXNOW_KEY` env var.
+ * 2. Serve `GET /{key}.txt` returning the key as plain text — see the scaffold
+ *    template at `src/pages/[indexnow_key].txt.ts`.
+ * 3. That's it — IndexNow verifies the key automatically on first submission.
+ *
+ * @param apiKey   Your IndexNow key (platform-level; served at `/{apiKey}.txt`)
+ * @param siteUrl  Absolute origin of the site, e.g. `https://example.com`
+ * @param urls     Absolute URLs that changed (max 10 000 per call)
+ *
+ * @example
+ * await notifyIndexNow("my-secret-key", "https://214store.com", [
+ *   "https://214store.com/producto/laptop-gamer",
+ * ]);
+ */
+export async function notifyIndexNow(
+  apiKey: string,
+  siteUrl: string,
+  urls: string[]
+): Promise<void> {
+  if (!apiKey || urls.length === 0) return;
+
+  const host = new URL(siteUrl).hostname;
+  const payload = {
+    host,
+    key: apiKey,
+    keyLocation: `${siteUrl}/${apiKey}.txt`,
+    urlList: urls,
+  };
+
+  try {
+    const resp = await fetch("https://api.indexnow.org/indexnow", {
+      method: "POST",
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+    if (!resp.ok && resp.status !== 202) {
+      console.warn(`[IndexNow] Submission returned ${resp.status} for ${host}`);
+    }
+  } catch (err) {
+    console.warn(`[IndexNow] Submission failed for ${host}:`, err);
+  }
+}
+
 /** List all websites for a service-key authenticated caller. Useful for build-time scripts. */
 export async function fetchProximaWebsiteList(config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">): Promise<ProximaWebsiteResponse[]> {
   const url = new URL("/api/v1/storefront/cms/websites", config.baseUrl);
@@ -623,20 +1169,37 @@ export interface AddressInput {
 
 export interface OrderItem {
   id: number;
-  product_variant_id: number;
+  product_variant_id?: number | null;
+  product_id?: number | null;
+  product_slug?: string | null;
+  product_image?: string | null;
+  product_name?: string | null;
+  brand_name?: string | null;
+  category_name?: string | null;
+  sku?: string | null;
   quantity: number;
+  price_at_purchase?: number | null;
+  /** @deprecated use price_at_purchase */
   unit_price?: number | null;
+  /** @deprecated use product_name */
   name?: string | null;
 }
 
 /** An order placed by a customer. */
 export interface Order {
   id: string;
+  order_number?: string | null;
   status: string;
-  total?: number;
+  total_amount?: number | null;
+  currency?: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_email?: string | null;
   shipping_address?: string | null;
   created_at: string;
   items?: OrderItem[];
+  /** @deprecated use total_amount */
+  total?: number;
 }
 
 export interface OrderListResponse {
@@ -1139,6 +1702,47 @@ export async function fetchCategoriesDirectory(
 }
 
 /**
+ * A single node in the category navigation tree.
+ * `children` contains nodes at the next depth level (up to `max_depth`).
+ */
+export interface CategoryNavNode {
+  id: number;
+  slug: string;
+  name: string;
+  /** Storefront href — always `/categoria/{slug}` */
+  href: string;
+  image_url?: string | null;
+  product_count: number;
+  children: CategoryNavNode[];
+}
+
+export interface CategoryNavTreeResponse {
+  nodes: CategoryNavNode[];
+  total: number;
+}
+
+/**
+ * Fetch the full category hierarchy as a recursive tree.
+ * Use this for data-driven mega menus — it returns nested `children[]`
+ * with `/categoria/{slug}` hrefs ready to render.
+ *
+ * @param maxDepth - Maximum tree depth (1–5, default 3)
+ */
+export async function fetchCategoryNavTree(
+  config: Pick<ProximaApiConfig, "baseUrl">,
+  website: Pick<ProximaWebsiteResponse, "business_id" | "locale">,
+  params: { maxDepth?: number; locale?: string } = {}
+): Promise<CategoryNavTreeResponse> {
+  const url = new URL("/api/v1/storefront/categories/tree", config.baseUrl);
+  if (params.maxDepth !== undefined) url.searchParams.set("max_depth", String(params.maxDepth));
+  const res = await fetch(url, {
+    headers: storefrontHeaders(website.business_id, params.locale ?? website.locale),
+  });
+  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
+  return res.json();
+}
+
+/**
  * Fetch the full brand directory (all brands with product counts).
  * Useful for navigation menus and sitemap generation.
  */
@@ -1159,9 +1763,10 @@ export async function fetchBrandsDirectory(
 // Cart
 // ---------------------------------------------------------------------------
 
-function cartHeaders(businessId: string, token?: string | null): Record<string, string> {
+function cartHeaders(businessId: string, token?: string | null, sessionId?: string | null): Record<string, string> {
   const h: Record<string, string> = { "X-Business-ID": businessId };
   if (token) h["Authorization"] = `Bearer ${token}`;
+  if (sessionId && !token) h["X-Session-ID"] = sessionId;
   return h;
 }
 
@@ -1169,10 +1774,10 @@ function cartHeaders(businessId: string, token?: string | null): Record<string, 
 export async function fetchCart(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: ProximaWebsiteResponse,
-  params: { token?: string | null }
+  params: { token?: string | null; sessionId?: string | null }
 ): Promise<Cart> {
   const url = new URL("/api/v1/cart", config.baseUrl);
-  const res = await fetch(url, { headers: cartHeaders(website.business_id, params.token) });
+  const res = await fetch(url, { headers: cartHeaders(website.business_id, params.token, params.sessionId) });
   if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
   return res.json();
 }
@@ -1184,12 +1789,12 @@ export async function fetchCart(
 export async function addToCart(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: ProximaWebsiteResponse,
-  params: { token?: string | null; variantId: number; quantity: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
   const url = new URL("/api/v1/cart/items", config.baseUrl);
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token) },
+    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token, params.sessionId) },
     body: JSON.stringify({ product_variant_id: params.variantId, quantity: params.quantity }),
   });
   if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
@@ -1200,12 +1805,12 @@ export async function addToCart(
 export async function updateCartItem(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: ProximaWebsiteResponse,
-  params: { token?: string | null; variantId: number; quantity: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
   const url = new URL(`/api/v1/cart/items/${params.variantId}`, config.baseUrl);
   const res = await fetch(url, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token) },
+    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token, params.sessionId) },
     body: JSON.stringify({ quantity: params.quantity }),
   });
   if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
@@ -1216,12 +1821,12 @@ export async function updateCartItem(
 export async function removeCartItem(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: ProximaWebsiteResponse,
-  params: { token?: string | null; variantId: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number }
 ): Promise<Cart> {
   const url = new URL(`/api/v1/cart/items/${params.variantId}`, config.baseUrl);
   const res = await fetch(url, {
     method: "DELETE",
-    headers: cartHeaders(website.business_id, params.token),
+    headers: cartHeaders(website.business_id, params.token, params.sessionId),
   });
   if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
   return res.json();
@@ -1600,10 +2205,10 @@ export async function processVerifyEmail(
  */
 export async function processAddToCart(
   env: BuyerServerEnv,
-  params: { token?: string | null; variantId: number; quantity: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-  return addToCart({ baseUrl: env.apiUrl }, website, { token: params.token, variantId: params.variantId, quantity: params.quantity });
+  return addToCart({ baseUrl: env.apiUrl }, website, { token: params.token, sessionId: params.sessionId, variantId: params.variantId, quantity: params.quantity });
 }
 
 /**
@@ -1612,10 +2217,10 @@ export async function processAddToCart(
  */
 export async function processRemoveCartItem(
   env: BuyerServerEnv,
-  params: { token?: string | null; variantId: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number }
 ): Promise<Cart> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-  return removeCartItem({ baseUrl: env.apiUrl }, website, { token: params.token, variantId: params.variantId });
+  return removeCartItem({ baseUrl: env.apiUrl }, website, { token: params.token, sessionId: params.sessionId, variantId: params.variantId });
 }
 
 /**
@@ -1624,10 +2229,10 @@ export async function processRemoveCartItem(
  */
 export async function processUpdateCartItem(
   env: BuyerServerEnv,
-  params: { token?: string | null; variantId: number; quantity: number }
+  params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-  return updateCartItem({ baseUrl: env.apiUrl }, website, { token: params.token, variantId: params.variantId, quantity: params.quantity });
+  return updateCartItem({ baseUrl: env.apiUrl }, website, { token: params.token, sessionId: params.sessionId, variantId: params.variantId, quantity: params.quantity });
 }
 
 /**
@@ -1636,10 +2241,10 @@ export async function processUpdateCartItem(
  */
 export async function processGetCart(
   env: BuyerServerEnv,
-  params: { token?: string | null }
+  params: { token?: string | null; sessionId?: string | null }
 ): Promise<Cart> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
-  return fetchCart({ baseUrl: env.apiUrl }, website, { token: params.token });
+  return fetchCart({ baseUrl: env.apiUrl }, website, { token: params.token, sessionId: params.sessionId });
 }
 
 /**
