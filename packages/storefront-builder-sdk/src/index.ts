@@ -132,4 +132,4 @@ export {
   resolveEditorKind,
   resolveEditorKindLabel,
   type CmsEditorKind,
-} from "./inspect-meta.ts";
+} from "./inspect-meta";
