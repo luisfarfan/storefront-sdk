@@ -84,11 +84,11 @@ import {
 } from '@proxima-io/storefront-core';
 
 export const POST: APIRoute = async ({ request, cookies }) => {
-  const { email, password, next } = await request.json();
+  const { email, password, next, captchaToken } = await request.json();
 
   try {
     const { access_token, refresh_token, next: redirectTo } =
-      await processBuyerLogin(env, { email, password, next });
+      await processBuyerLogin(env, { email, password, next, captchaToken });
 
     cookies.set(BUYER_COOKIE_NAME, access_token, BUYER_COOKIE_OPTIONS);
     if (refresh_token) {
@@ -101,6 +101,11 @@ export const POST: APIRoute = async ({ request, cookies }) => {
   }
 };
 ```
+
+> **Cloudflare Turnstile:** cuando la API tiene `TURNSTILE_ENABLED=true`, `captchaToken`
+> es obligatorio. Recógelo del widget `<div class="cf-turnstile">` en el frontend y
+> pásalo en el body del POST. El SDK lo envía como `captcha_token` al API.
+> Lo mismo aplica a `processBuyerRegister` y `processForgotPassword`.
 
 ### Logout
 
@@ -224,30 +229,55 @@ export const GET: APIRoute = async ({ cookies }) => {
 
 ### Agregar al carrito
 
+La API devuelve **HTTP 422 con `{ code: "OUT_OF_STOCK" }`** cuando el variant no
+tiene stock. El API route debe capturar ese código y devolverlo normalizado al
+cliente para que el storefront muestre "Sin stock" sin hacer un hard reload.
+
 ```ts
-// src/pages/api/cart/add.ts
-import { processAddToCart } from '@proxima-io/storefront-core';
+// src/pages/api/buyer/cart/add.ts
+import type { APIRoute } from 'astro';
+import { processAddToCart, BUYER_COOKIE_NAME } from '@proxima-io/storefront-core';
+
+const env = {
+  apiUrl: import.meta.env.PROXIMA_API_URL,
+  domain: import.meta.env.PROXIMA_WEBSITE_DOMAIN,
+};
 
 export const POST: APIRoute = async ({ request, cookies }) => {
-  const { variant_id, quantity } = await request.json();
-  const token = cookies.get(BUYER_COOKIE_NAME)?.value;
+  const isAjax = request.headers.get('X-Requested-With') === 'XMLHttpRequest';
+  const body = await request.json().catch(() => ({}));
+  const variantId = Number(body.variant_id);
+  const quantity  = Number(body.quantity ?? 1);
 
-  // Crear session_id si no existe
-  let sessionId = cookies.get('proxima_session')?.value;
+  const token = cookies.get(BUYER_COOKIE_NAME)?.value ?? null;
+  let sessionId = cookies.get('proxima_session')?.value ?? null;
   if (!sessionId) {
     sessionId = crypto.randomUUID();
     cookies.set('proxima_session', sessionId, { path: '/', maxAge: 60 * 60 * 24 * 30 });
   }
 
   try {
-    const cart = await processAddToCart(
-      { baseUrl: import.meta.env.PROXIMA_API_URL },
-      { business_id: import.meta.env.PROXIMA_BUSINESS_ID },
-      { token, session_id: sessionId, variant_id, quantity: quantity ?? 1 }
-    );
-    return Response.json({ ok: true, cart });
-  } catch (e: any) {
-    return Response.json({ ok: false, error: e.data?.detail }, { status: e.status ?? 400 });
+    const cart = await processAddToCart(env, { token, sessionId, variantId, quantity });
+    if (isAjax) return Response.json({ ok: true, cart });
+    return Response.redirect(request.headers.get('Referer') ?? '/carrito', 303);
+  } catch (err: any) {
+    // Normalize API error codes → client-friendly slugs
+    const code = (err?.data as any)?.detail?.code
+      ?? (err?.data as any)?.code
+      ?? null;
+
+    const errorSlug =
+      code === 'OUT_OF_STOCK'     ? 'out_of_stock'
+      : code === 'VARIANT_NOT_FOUND' ? 'variant_not_found'
+      : 'server_error';
+
+    if (isAjax) {
+      return Response.json(
+        { ok: false, error: errorSlug },
+        { status: err?.status ?? 422 }
+      );
+    }
+    return Response.redirect(`/carrito?error=${errorSlug}`, 303);
   }
 };
 ```
@@ -617,17 +647,18 @@ await setDefaultBuyerAddress({ baseUrl: apiUrl }, { business_id }, { token, addr
 
 | Helper | Cuándo usarlo |
 |--------|--------------|
-| `processBuyerRegister` | POST /api/buyer/register |
-| `processBuyerLogin` | POST /api/buyer/login |
+| `processBuyerRegister` | POST /api/buyer/register (soporta `captchaToken`) |
+| `processBuyerLogin` | POST /api/buyer/login (soporta `captchaToken`) |
 | `processBuyerLogout` | POST /api/buyer/logout |
 | `processRefreshToken` | Middleware: refresh silencioso |
 | `fetchBuyerProfile` | GET perfil autenticado |
 | `updateBuyerProfile` | PATCH datos del perfil |
-| `processForgotPassword` | POST olvidé mi contraseña |
+| `processForgotPassword` | POST olvidé mi contraseña (soporta `captchaToken`) |
 | `processResetPassword` | POST resetear contraseña con token |
 | `processGetCart` | GET carrito actual |
-| `processAddToCart` | POST añadir al carrito |
+| `processAddToCart` | POST añadir al carrito — lanza `{ data: { detail: { code: "OUT_OF_STOCK" } } }` si sin stock |
 | `processRemoveCartItem` | DELETE quitar item |
+| `processUpdateCartItem` | PATCH actualizar cantidad de un item |
 | `mergeGuestCart` | POST fusionar carrito guest tras login |
 | `processBuyerCheckout` | POST confirmar orden |
 | `fetchOrders` | GET historial de órdenes |
@@ -640,5 +671,32 @@ await setDefaultBuyerAddress({ baseUrl: apiUrl }, { business_id }, { token, addr
 | `fetchStorefrontProducts` | Paginación: listado general |
 | `fetchCategoryProducts` | Paginación: por categoría |
 | `fetchBrandProducts` | Paginación: por marca |
-| `fetchCategoriesDirectory` | Listar todas las categorías (sitemap, nav) |
+| `fetchCategoriesDirectory` | Listar todas las categorías (plano, para sitemap) |
+| `fetchCategoryNavTree` | Árbol recursivo de categorías para mega menú de navegación |
 | `fetchBrandsDirectory` | Listar todas las marcas |
+
+### Manejo de errores de stock
+
+El API route de agregar al carrito debe normalizar los códigos de error de la API:
+
+```ts
+// Errores posibles de processAddToCart
+try {
+  const cart = await processAddToCart(env, params);
+} catch (err: any) {
+  const code = err?.data?.detail?.code ?? err?.data?.code ?? null;
+  // code === "OUT_OF_STOCK"      → producto sin stock
+  // code === "VARIANT_NOT_FOUND" → variant inválido
+  // null                         → error de servidor
+}
+```
+
+En el cliente (`cart-actions.ts`), manejar el slug normalizado:
+
+```ts
+const data = await res.json();
+if (!data.ok) {
+  if (data.error === 'out_of_stock') showToast('Sin stock disponible');
+  else showToast('Error al agregar al carrito');
+}
+```

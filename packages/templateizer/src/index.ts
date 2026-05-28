@@ -23,6 +23,7 @@ const commands = new Set([
   "sync",
   "status",
   "website-deploy",
+  "template-deploy",
 ]);
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
@@ -58,6 +59,9 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   }
   if (command === "website-deploy") {
     return websiteDeployCommand(targetPath, argv.slice(2));
+  }
+  if (command === "template-deploy") {
+    return templateDeployCommand(targetPath, argv.slice(2));
   }
   if (command === "preview") {
     console.log("Run preview with: pnpm --filter @proxima-io/catalog-preview dev");
@@ -514,6 +518,19 @@ function loadWebsiteManifest(targetPath: string): WebsiteDeployManifest {
   return result.data;
 }
 
+/**
+ * Reads all values for a repeatable flag (e.g. --page /a --page /b → ["/a", "/b"]).
+ */
+function readFlagAll(argv: string[], name: string): string[] {
+  const results: string[] = [];
+  for (let i = 0; i < argv.length - 1; i++) {
+    if (argv[i] === name) {
+      results.push(argv[i + 1]);
+    }
+  }
+  return results;
+}
+
 async function websiteDeployCommand(targetPath: string, argv: string[]): Promise<number> {
   const dotenv = loadDotEnv(targetPath);
 
@@ -525,6 +542,7 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
     resolveEnvVar("PROXIMA_WEBSITE_DOMAIN", dotenv);
   const dryRun     = argv.includes("--dry-run");
   const force      = argv.includes("--force");
+  const pageFilter = readFlagAll(argv, "--page");
 
   // Validate credentials up front
   if (!apiUrl) {
@@ -549,6 +567,35 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
     return 1;
   }
 
+  // Apply --page filter (repeatable: --page /contacto --page /blog)
+  let pagesToDeploy = manifest.pages;
+  if (pageFilter.length > 0) {
+    pagesToDeploy = manifest.pages.filter((p) => {
+      const page = p as Record<string, unknown>;
+      return pageFilter.some(
+        (f) => page["path"] === f || page["resolver_kind"] === f,
+      );
+    });
+    if (pagesToDeploy.length === 0) {
+      const available = manifest.pages
+        .map((p) => {
+          const page = p as Record<string, unknown>;
+          return page["path"] ?? page["resolver_kind"];
+        })
+        .join(", ");
+      console.error(`✗ No pages matched filter: ${pageFilter.join(", ")}`);
+      console.error(`  Available: ${available}`);
+      return 1;
+    }
+    const matched = pagesToDeploy
+      .map((p) => {
+        const page = p as Record<string, unknown>;
+        return page["path"] ?? page["resolver_kind"];
+      })
+      .join(", ");
+    console.log(`Deploying ${pagesToDeploy.length} page(s): ${matched}\n`);
+  }
+
   // Dry run — print payload and exit
   if (dryRun) {
     console.log("Dry run — no API call made.\n");
@@ -556,7 +603,7 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
     console.log(JSON.stringify({
       website_domain: domain,
       section_types: manifest.section_types,
-      pages: manifest.pages,
+      pages: pagesToDeploy,
       shell_sections: manifest.shell_sections ?? [],
     }, null, 2));
     return 0;
@@ -573,7 +620,7 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
   }
 
   try {
-    const result = await client.deploy(domain, manifest, { force });
+    const result = await client.deploy(domain, { ...manifest, pages: pagesToDeploy }, { force });
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
     console.log(`✓ Connected to ${result.website.domain} (website #${result.website.id})\n`);
@@ -636,6 +683,226 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
   }
 }
 
+// ---------------------------------------------------------------------------
+// template-deploy command
+// ---------------------------------------------------------------------------
+
+type SmartCollectionPlaceholderDef = {
+  name: string;
+  type: string;
+  contract_type?: string;
+  config?: Record<string, unknown>;
+  cache_ttl?: number;
+  instantiate_config?: Record<string, unknown>;
+};
+
+type TemplateStructure = {
+  shell_sections: unknown[];
+  smart_collection_placeholders: Record<string, SmartCollectionPlaceholderDef>;
+  pages: unknown[];
+  layouts: unknown[];
+};
+
+function buildTemplateStructure(manifest: ReturnType<typeof loadWebsiteManifest>): TemplateStructure {
+  const placeholders = (manifest.smart_collection_placeholders ?? {}) as Record<string, SmartCollectionPlaceholderDef>;
+  const placeholderKeys = new Set(Object.keys(placeholders));
+
+  function convertValue(value: unknown, fieldPath: string): unknown {
+    if (typeof value === "string" && value.startsWith("auto:")) {
+      const key = value.slice("auto:".length);
+      if (!placeholderKeys.has(key)) {
+        throw new Error(
+          `smart_collection_id value '${value}' at '${fieldPath}' references auto key '${key}' ` +
+          `which is not declared in smart_collection_placeholders. ` +
+          `Add an entry for '${key}' in smart_collection_placeholders or use {"_smart_collection_placeholder": "${key}"}.`
+        );
+      }
+      return { _smart_collection_placeholder: key };
+    }
+    if (typeof value === "number") {
+      if (fieldPath.toLowerCase().includes("smart_collection")) {
+        throw new Error(
+          `smart_collection_id value at '${fieldPath}' is a numeric ID (${value}). ` +
+          `Templates must use {"_smart_collection_placeholder": "key"} or "auto:key" strings instead of raw IDs.`
+        );
+      }
+    }
+    if (Array.isArray(value)) {
+      return value.map((item, i) => convertValue(item, `${fieldPath}[${i}]`));
+    }
+    if (value && typeof value === "object") {
+      const rec = value as Record<string, unknown>;
+      if ("_smart_collection_placeholder" in rec) return rec;
+      return Object.fromEntries(
+        Object.entries(rec).map(([k, v]) => [k, convertValue(v, `${fieldPath}.${k}`)])
+      );
+    }
+    return value;
+  }
+
+  const pages = manifest.pages.map((page) => {
+    const sections = (page.scaffold_sections ?? []).map((scaffold, si) => {
+      const rawValues = scaffold.default_values ?? {};
+      const values: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rawValues)) {
+        values[k] = convertValue(v, `pages[${page.resolver_kind}].scaffold_sections[${si}].default_values.${k}`);
+      }
+      return {
+        name: scaffold.section_type,
+        type: scaffold.section_type,
+        order: scaffold.order ?? si,
+        values,
+      };
+    });
+
+    const pageEntry: Record<string, unknown> = {
+      name: page.label ?? page.resolver_kind,
+      path: page.path ?? `/{${page.resolver_kind}}`,
+      resolver_kind: page.resolver_kind,
+      has_params: !!(page.path ?? "").includes("{"),
+      params: ((page.path ?? "").match(/\{([^}]+)\}/g) ?? []).map((m: string) => m.slice(1, -1)),
+      order: 0,
+      sections,
+    };
+    return pageEntry;
+  });
+
+  const shellDefaultValues = (manifest.shell_default_values ?? {}) as Record<string, Record<string, unknown>>;
+  const shellSections = (manifest.shell_sections ?? []).map((shell) => {
+    const slot = shell.key;
+    const rawValues = shellDefaultValues[slot] ?? {};
+    const values: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rawValues)) {
+      values[k] = convertValue(v, `shell_default_values.${slot}.${k}`);
+    }
+    return {
+      slot,
+      section_type: shell.section_type ?? slot,
+      name: shell.label ?? slot.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      order: shell.order ?? 0,
+      values,
+    };
+  });
+
+  return {
+    shell_sections: shellSections,
+    smart_collection_placeholders: placeholders,
+    pages,
+    layouts: [],
+  };
+}
+
+async function templateDeployCommand(targetPath: string, argv: string[]): Promise<number> {
+  const dotenv = loadDotEnv(targetPath);
+
+  const apiUrl      = readFlag(argv, "--api-url")      ?? resolveEnvVar("PROXIMA_API_URL", dotenv);
+  const serviceKey  = readFlag(argv, "--service-key")  ?? resolveEnvVar("PROXIMA_SERVICE_KEY", dotenv);
+  const templateKey = readFlag(argv, "--template-key") ?? resolveEnvVar("PROXIMA_TEMPLATE_KEY", dotenv);
+  const dryRun      = argv.includes("--dry-run");
+
+  if (!apiUrl) {
+    console.error("✗ PROXIMA_API_URL is required (set in .env or pass --api-url)");
+    return 1;
+  }
+  if (!serviceKey) {
+    console.error("✗ PROXIMA_SERVICE_KEY is required (set in .env or pass --service-key)");
+    return 1;
+  }
+  if (!templateKey) {
+    console.error("✗ PROXIMA_TEMPLATE_KEY is required (set in .env or pass --template-key)");
+    return 1;
+  }
+
+  let manifest: ReturnType<typeof loadWebsiteManifest>;
+  try {
+    manifest = loadWebsiteManifest(targetPath);
+  } catch (err: unknown) {
+    console.error(`✗ ${(err as Error).message}`);
+    return 1;
+  }
+
+  let structure: TemplateStructure;
+  try {
+    structure = buildTemplateStructure(manifest);
+  } catch (err: unknown) {
+    console.error(`✗ ${(err as Error).message}`);
+    return 1;
+  }
+
+  // Extract marketplace metadata from manifest (all optional fields)
+  const metadata: Record<string, unknown> = {};
+  const metadataFields = [
+    "name", "short_description", "description", "demo_url",
+    "features", "pricing_tier", "color_palette", "tags",
+    "category", "industry", "preview_image",
+  ] as const;
+  for (const field of metadataFields) {
+    const value = (manifest as Record<string, unknown>)[field];
+    if (value !== undefined && value !== null) {
+      metadata[field] = value;
+    }
+  }
+
+  if (dryRun) {
+    console.log("Dry run — no API call made.\n");
+    console.log("Template key:", templateKey);
+    console.log("Structure:");
+    console.log(JSON.stringify(structure, null, 2));
+    if (Object.keys(metadata).length > 0) {
+      console.log("\nMarketplace metadata:");
+      console.log(JSON.stringify(metadata, null, 2));
+    }
+    return 0;
+  }
+
+  const start = Date.now();
+  const url = `${apiUrl.replace(/\/$/, "")}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/structure`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${serviceKey}`,
+      },
+      body: JSON.stringify({ structure, ...metadata }),
+    });
+  } catch (err: unknown) {
+    console.error(`✗ Network error: ${(err as Error).message}`);
+    return 1;
+  }
+
+  const text = await response.text();
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+
+  if (response.status === 404) {
+    console.error(`✗ Template '${templateKey}' not found in the API.`);
+    console.error("  Verify PROXIMA_TEMPLATE_KEY matches a template registered in the Proxima admin.");
+    return 1;
+  }
+  if (response.status === 403) {
+    console.error("✗ Access denied. The service key does not have cms:templates:write scope.");
+    return 1;
+  }
+  if (!response.ok) {
+    console.error(`✗ Deploy failed (${response.status}): ${text}`);
+    return 1;
+  }
+
+  const pageCount = structure.pages.length;
+  const shellCount = structure.shell_sections.length;
+  const placeholderCount = Object.keys(structure.smart_collection_placeholders).length;
+
+  const metadataCount = Object.keys(metadata).length;
+  console.log(`✓ Template '${templateKey}' structure deployed in ${elapsed}s`);
+  console.log(`  Pages: ${pageCount}  |  Shell sections: ${shellCount}  |  Smart collection placeholders: ${placeholderCount}`);
+  if (metadataCount > 0) {
+    console.log(`  Marketplace metadata: ${Object.keys(metadata).join(", ")}`);
+  }
+  return 0;
+}
+
 function printHelp() {
   console.log(`Usage: proxima-templateizer <command> <target>
 
@@ -658,7 +925,16 @@ Commands:
 Website deploy options:
   --dry-run         Print the payload without calling the API.
   --force           Allow breaking changes (attribute type changes, renames).
+  --page <path>     Deploy only this page (repeatable: --page /a --page /b).
+                    Matches against page path or resolver_kind.
+                    section_types are always deployed in full.
   --domain          Override PROXIMA_DOMAIN.
+  --service-key     Override PROXIMA_SERVICE_KEY.
+  --api-url         Override PROXIMA_API_URL.
+
+Template deploy options:
+  --dry-run         Print the structure JSON without calling the API.
+  --template-key    Override PROXIMA_TEMPLATE_KEY.
   --service-key     Override PROXIMA_SERVICE_KEY.
   --api-url         Override PROXIMA_API_URL.
 

@@ -68,7 +68,7 @@ cd <proyecto>
 node node_modules/@proxima-io/templateizer/dist/index.js website-deploy . --dry-run
 # o: npx proxima-templateizer website-deploy .
 
-# Deploy estándar
+# Deploy estándar (todas las páginas)
 npx proxima-templateizer website-deploy .
 
 # En proxima-storefronts/apps/214store (recomendado — salida visible):
@@ -85,6 +85,33 @@ npx proxima-templateizer website-deploy . \
 ```
 
 > Si `npx proxima-templateizer website-deploy` termina en silencio sin output, invocar con `node …/templateizer/dist/index.js website-deploy .` o el script `manifest:deploy` del app.
+
+### Deploy página por página — flag `--page`
+
+El flag `--page <path>` filtra el array `pages` antes de enviarlo a la API. Los `section_types` siempre se envían completos. El flag es **repetible**.
+
+```bash
+# Una sola página (por path)
+npx proxima-templateizer website-deploy . --page /contacto
+
+# Por resolver_kind (páginas dinámicas sin path fijo)
+npx proxima-templateizer website-deploy . --page product_detail
+
+# Varias páginas
+npx proxima-templateizer website-deploy . --page /blog --page /contacto
+
+# Dry-run para verificar el payload antes
+npx proxima-templateizer website-deploy . --page /sobre-nosotros --dry-run
+```
+
+Si el path no coincide con ninguna entrada en el manifiesto, el CLI imprime error con las disponibles:
+
+```
+✗ No pages matched filter: /pagina-inexistente
+  Available: /, /productos, product_detail, /carrito, /checkout, ...
+```
+
+> Útil para iterar página por página durante el desarrollo sin deployar todo el manifiesto de una vez.
 
 ---
 

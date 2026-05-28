@@ -1,0 +1,102 @@
+---
+/**
+ * BuilderEmptyState — shared placeholder shown in the Builder when a section
+ * has no data configured. Provides a consistent visual (dashed border, icon,
+ * instruction) so every section is selectable in the editor.
+ *
+ * Used only when cmsPreview === true && section has no data.
+ *
+ * Usage:
+ * ```astro
+ * {showEmptyState && <BuilderEmptyState sectionName="Hero Bento" />}
+ * ```
+ */
+interface Props {
+  /** Human-readable section name shown in the placeholder. */
+  sectionName?: string;
+  /** Override the instruction line below the title. */
+  instruction?: string;
+  /** Minimum height of the placeholder (CSS value). Default: 12rem. */
+  minHeight?: string;
+  /** Optional icon slot. If not provided, renders a default grid icon. */
+  class?: string;
+}
+
+const {
+  sectionName = "Sección",
+  instruction = "Configura esta sección desde el panel de la derecha",
+  minHeight = "12rem",
+} = Astro.props;
+---
+
+<div
+  class:list={["builder-empty-state", Astro.props.class]}
+  style={`min-height: ${minHeight}`}
+  data-section-name={sectionName}
+>
+  <div class="icon-wrapper">
+    <slot name="icon">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.5"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <rect width="18" height="18" x="3" y="3" rx="2" />
+        <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
+      </svg>
+    </slot>
+  </div>
+  <p class="section-name">{sectionName}</p>
+  <p class="instruction">{instruction}</p>
+</div>
+
+<style>
+  .builder-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.625rem;
+    width: 100%;
+    border: 2px dashed rgba(255, 255, 255, 0.15);
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 2rem 1.5rem;
+    text-align: center;
+    box-sizing: border-box;
+  }
+
+  .icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 3rem;
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  .section-name {
+    margin: 0;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.5);
+    letter-spacing: -0.01em;
+  }
+
+  .instruction {
+    margin: 0;
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.3);
+    max-width: 20rem;
+  }
+</style>

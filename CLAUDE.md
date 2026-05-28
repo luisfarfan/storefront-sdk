@@ -231,3 +231,57 @@ Para tareas específicas, consulta los skills en `.claude/skills/`:
 - `packages/templateizer/src/index.ts` — toda la lógica del CLI incluyendo `websiteDeployCommand`
 - `examples/storefront-starter/proxima.website.json` — manifiesto de ejemplo completo
 - `examples/storefront-starter/.env.example` — variables de entorno necesarias
+
+---
+
+## Funciones clave exportadas por `storefront-core`
+
+### Composición y website
+- `fetchProximaWebsite(config)` — resolver website por dominio
+- `fetchProximaComposition(config, website)` — composición completa de una página (SSR)
+- `makeBuilderPreviewWebsite(config)` — website sintético para el Builder visual
+
+### SEO y structured data
+- `buildPageSeo(seoData, website, locale, currentUrl)` → `PageSeoMeta` — metadata SEO completa con prioridad CMS > entidad > defaults
+- `buildWebSiteJsonLd(website)` — JSON-LD `WebSite` (SearchAction)
+- `buildOrganizationJsonLd(website)` — JSON-LD `Organization` con logo (null si no hay logo)
+- `buildProductJsonLd(product, website)` — JSON-LD `Product` con `Offer`, precio tachado, imágenes
+- `buildBreadcrumbJsonLd(items, siteUrl)` — JSON-LD `BreadcrumbList`
+- `generateSitemapXml(website, apiUrl, options?)` — genera sitemap.xml completo (páginas + categorías + marcas + productos paginados)
+- `generateRobotsTxt(website)` — genera robots.txt con Disallow en rutas privadas
+- `notifyIndexNow(apiKey, siteUrl, urls)` — notifica Bing/Yandex sobre URLs actualizadas
+
+### Catálogo (client-side / sitemap)
+- `searchStorefront(config, website, params)` — búsqueda de productos
+- `fetchStorefrontProducts(config, website, params?)` — listado general con filtros
+- `fetchCategoryProducts(config, website, params)` — productos de una categoría
+- `fetchBrandProducts(config, website, params)` — productos de una marca
+- `fetchCategoriesDirectory(config, website)` — directorio plano de categorías
+- `fetchCategoryNavTree(config, website, params?)` — árbol recursivo para mega menú (con `children[]` y `href=/categoria/{slug}`)
+- `fetchBrandsDirectory(config, website)` — directorio de marcas
+
+### Auth del buyer
+- `processBuyerLogin(env, params)` — login (soporta `captchaToken` para Cloudflare Turnstile)
+- `processBuyerRegister(env, params)` — registro (soporta `captchaToken`, propaga `MissingFieldsError`)
+- `processBuyerLogout(env, params)` — logout best-effort
+- `processRefreshToken(env, params)` — refresh silencioso de token
+- `processForgotPassword(env, params)` — enviar email de reset (soporta `captchaToken`, nunca lanza)
+- `processResetPassword(env, params)` — reset con token de email
+- `processVerifyEmail(env, params)` — verificar email con token
+
+### Carrito
+- `processAddToCart(env, params)` — añadir variant; lanza `{ data: { detail: { code: "OUT_OF_STOCK" } } }` si sin stock
+- `processRemoveCartItem(env, params)` — quitar item
+- `processUpdateCartItem(env, params)` — actualizar cantidad
+- `processGetCart(env, params)` — obtener carrito actual
+- `mergeGuestCart(config, website, params)` — fusionar carrito guest tras login
+
+### Órdenes / Addresses / Wishlist
+- `processBuyerCheckout(env, params)` — crear orden
+- `fetchOrders / fetchOrder` — historial y detalle
+- `fetchCustomerAddresses / createCustomerAddress / updateCustomerAddress / deleteCustomerAddress / setDefaultAddress`
+- `fetchWishlist / addToWishlist / removeFromWishlist`
+- `validateCoupon(config, website, params)` — validar cupón antes del checkout
+
+### Analytics
+- `analytics.init(config)` + `analytics.track(type, payload)` — cliente singleton con batch/flush

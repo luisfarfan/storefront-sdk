@@ -35,6 +35,7 @@ export interface ProximaWebsiteResponse {
   publication_status?: string;
   published_at?: string | null;
   delivery_mode: string;
+  data_mode?: string | null;
   website_kind: string;
   template_key?: string | null;
   code_profile?: string | null;
@@ -386,6 +387,85 @@ export function buildBreadcrumbJsonLd(
         : {}),
     })),
   };
+}
+
+/**
+ * Minimal surface for a LocalBusiness JSON-LD block (typically emitted by the Footer).
+ * All fields are optional — only the ones present will appear in the output.
+ */
+export interface JsonLdLocalBusinessMeta {
+  name: string;
+  url: string;
+  image?: string | null;
+  telephone?: string | null;
+  street_address?: string | null;
+  address_locality?: string | null;
+  address_region?: string | null;
+  postal_code?: string | null;
+  address_country?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  opening_hours?: string[] | null;
+  opens?: string | null;
+  closes?: string | null;
+  social_links?: string[] | null;
+}
+
+/**
+ * Build a `LocalBusiness` JSON-LD object for brick-and-mortar stores.
+ * Returns `null` when `seo` is falsy so callers can gate rendering easily.
+ *
+ * @example
+ * const schema = buildLocalBusinessJsonLd(seo);
+ * {schema && <script type="application/ld+json" set:html={JSON.stringify(schema)} />}
+ */
+export function buildLocalBusinessJsonLd(
+  seo: JsonLdLocalBusinessMeta | null | undefined
+): Record<string, unknown> | null {
+  if (!seo) return null;
+
+  const result: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    "name": seo.name,
+    "url": seo.url,
+    "@id": `${seo.url}#localbusiness`,
+  };
+
+  if (seo.image) result["image"] = seo.image;
+  if (seo.telephone) result["telephone"] = seo.telephone;
+
+  const hasAddress = seo.street_address || seo.address_locality || seo.address_country;
+  if (hasAddress) {
+    const address: Record<string, unknown> = { "@type": "PostalAddress" };
+    if (seo.street_address) address["streetAddress"] = seo.street_address;
+    if (seo.address_locality) address["addressLocality"] = seo.address_locality;
+    if (seo.address_region) address["addressRegion"] = seo.address_region;
+    if (seo.postal_code) address["postalCode"] = seo.postal_code;
+    if (seo.address_country) address["addressCountry"] = seo.address_country;
+    result["address"] = address;
+  }
+
+  if (seo.latitude != null && seo.longitude != null) {
+    result["geo"] = {
+      "@type": "GeoCoordinates",
+      "latitude": seo.latitude,
+      "longitude": seo.longitude,
+    };
+  }
+
+  if (seo.opening_hours?.length || seo.opens || seo.closes) {
+    result["openingHoursSpecification"] = [{
+      "@type": "OpeningHoursSpecification",
+      ...(seo.opening_hours?.length ? { "dayOfWeek": seo.opening_hours } : {}),
+      ...(seo.opens ? { "opens": seo.opens } : {}),
+      ...(seo.closes ? { "closes": seo.closes } : {}),
+    }];
+  }
+
+  if (seo.social_links?.length) result["sameAs"] = seo.social_links;
+
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -2283,6 +2363,134 @@ export async function processDeleteAddress(
 ): Promise<void> {
   const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
   return deleteCustomerAddress({ baseUrl: env.apiUrl }, website, params);
+}
+
+// ---------------------------------------------------------------------------
+// Product Listing (filters, sorting, pagination)
+// ---------------------------------------------------------------------------
+
+export interface ProductListingFilters {
+  brand?: string | null;
+  category?: string | null;
+  price_min?: number | null;
+  price_max?: number | null;
+  in_stock?: boolean | null;
+}
+
+export type ProductListingSortOption = "newest" | "price_asc" | "price_desc" | "name_asc";
+
+/** @deprecated Use StorefrontFacetOption from the main listing types */
+export type ProductFacet = StorefrontFacetOption;
+
+/** @deprecated Use StorefrontProductListingResponse */
+export type ProductListingResult = StorefrontProductListingResponse;
+
+/**
+ * Fetch a filtered, sorted, paginated product listing.
+ * Extends fetchStorefrontProducts with price range and stock filters.
+ */
+export async function fetchProductListing(
+  config: Pick<ProximaApiConfig, "baseUrl">,
+  website: Pick<ProximaWebsiteResponse, "business_id" | "locale" | "currency">,
+  params: {
+    filters?: ProductListingFilters;
+    sort?: ProductListingSortOption;
+    page?: number;
+    page_size?: number;
+  } = {}
+): Promise<StorefrontProductListingResponse> {
+  const url = new URL("/api/v1/storefront/products", config.baseUrl);
+  if (params.filters?.brand) url.searchParams.set("brand", params.filters.brand);
+  if (params.filters?.category) url.searchParams.set("category", params.filters.category);
+  if (params.filters?.price_min != null) url.searchParams.set("price_min", String(params.filters.price_min));
+  if (params.filters?.price_max != null) url.searchParams.set("price_max", String(params.filters.price_max));
+  if (params.filters?.in_stock) url.searchParams.set("in_stock", "true");
+  if (params.sort) url.searchParams.set("sort", params.sort);
+  if (params.page) url.searchParams.set("page", String(params.page));
+  if (params.page_size) url.searchParams.set("page_size", String(params.page_size));
+
+  const res = await fetch(url, {
+    headers: storefrontHeaders(website.business_id, website.locale, website.currency),
+  });
+  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Guest Checkout
+// ---------------------------------------------------------------------------
+
+export interface GuestOrderPayload {
+  session_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string;
+  shipping_address?: string | null;
+  notes?: string | null;
+}
+
+export interface GuestOrderResult {
+  orderId: string;
+}
+
+export class GuestOrderError extends Error {
+  constructor(
+    public readonly code: "CART_NOT_FOUND" | "OUT_OF_STOCK" | "SERVER_ERROR",
+    message: string
+  ) {
+    super(message);
+    this.name = "GuestOrderError";
+  }
+}
+
+/**
+ * Create an order without buyer authentication.
+ * The cart is identified by `session_id` (from the storefront session cookie).
+ * Throws `GuestOrderError` for typed error cases.
+ */
+export async function initiateGuestOrder(
+  config: Pick<ProximaApiConfig, "baseUrl">,
+  website: Pick<ProximaWebsiteResponse, "business_id">,
+  payload: GuestOrderPayload
+): Promise<GuestOrderResult> {
+  const { session_id, ...checkout } = payload;
+  const url = new URL("/api/v1/checkout", config.baseUrl);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Business-ID": website.business_id,
+      "X-Session-ID": session_id,
+    },
+    body: JSON.stringify(checkout),
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const detail = body?.detail ?? "";
+    if (detail === "Cart is empty" || detail === "Cart not found") {
+      throw new GuestOrderError("CART_NOT_FOUND", detail);
+    }
+    if (typeof detail === "object" && detail?.code === "OUT_OF_STOCK") {
+      throw new GuestOrderError("OUT_OF_STOCK", "Some items are out of stock");
+    }
+    throw new GuestOrderError("SERVER_ERROR", String(detail || res.status));
+  }
+
+  const order = await res.json();
+  return { orderId: order.id };
+}
+
+/**
+ * Resolve website then call initiateGuestOrder.
+ * Server-side helper for Astro API routes.
+ */
+export async function processGuestCheckout(
+  env: BuyerServerEnv,
+  payload: GuestOrderPayload
+): Promise<GuestOrderResult> {
+  const website = await fetchProximaWebsite({ baseUrl: env.apiUrl, domain: env.domain, serviceKey: env.serviceKey });
+  return initiateGuestOrder({ baseUrl: env.apiUrl }, website, payload);
 }
 
 // ---------------------------------------------------------------------------

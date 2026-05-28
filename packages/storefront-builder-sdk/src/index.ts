@@ -97,6 +97,34 @@ export function getAttributeMeta(section: CmsSectionRecord | null | undefined, n
   return (section?.attributes_meta ?? section?.attributesMeta)?.[name];
 }
 
+/**
+ * Creates the attribute accessor helpers used by every section component.
+ * Replaces the 4-line boilerplate copy-pasted across ~21 sections.
+ *
+ * Usage (in section frontmatter):
+ * ```ts
+ * const { key, label, type } = getSectionAttr(props.attributesMeta);
+ * // then:
+ * attributeKey={key("hero_products")}
+ * type={type("hero_products", "smart_collection_id")}
+ * label={label("hero_products", "Productos")}
+ * ```
+ */
+export function getSectionAttr(attributesMeta?: Record<string, unknown> | null) {
+  const meta = (name: string): Record<string, unknown> =>
+    (attributesMeta?.[name] ?? {}) as Record<string, unknown>;
+
+  return {
+    key: (name: string): string =>
+      String(meta(name).attribute_key ?? meta(name).attributeKey ?? name),
+    label: (name: string, fallback = ""): string =>
+      String(meta(name).label ?? fallback),
+    type: (name: string, fallback = "text"): string =>
+      String(meta(name).type ?? fallback),
+    meta,
+  };
+}
+
 export {
   buildEditableAttributeProps,
   buildEditableItemInspectTitle,

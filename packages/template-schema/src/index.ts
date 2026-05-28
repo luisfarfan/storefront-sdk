@@ -217,8 +217,9 @@ export const websiteDeploySectionTypeSchema = z.object({
 });
 
 export const websiteDeployScaffoldSectionSchema = z.object({
-  section_type: z.string().min(1),
-  order:        z.number().int().default(0),
+  section_type:   z.string().min(1),
+  order:          z.number().int().default(0),
+  default_values: z.record(jsonValue).optional(),
 });
 
 export const websiteDeployPageSchema = z.object({
@@ -235,12 +236,35 @@ export const websiteDeployShellSectionSchema = z.object({
   order:        z.number().int().default(0),
 });
 
+export const websiteDeploySmartCollectionPlaceholderSchema = z.object({
+  name:             z.string().min(1),
+  type:             z.enum(smartCollectionTypes),
+  contract_type:    z.string().optional(),
+  config:           jsonObject.default({}),
+  cache_ttl:        z.number().int().default(300),
+  instantiate_config: jsonObject.optional(),
+});
+
 export const websiteDeployManifestSchema = z
   .object({
-    schema_version: z.literal("1.0").default("1.0"),
-    section_types:  z.array(websiteDeploySectionTypeSchema).min(1),
-    pages:          z.array(websiteDeployPageSchema).default([]),
-    shell_sections: z.array(websiteDeployShellSectionSchema).default([]),
+    schema_version:              z.literal("1.0").default("1.0"),
+    section_types:               z.array(websiteDeploySectionTypeSchema).min(1),
+    pages:                       z.array(websiteDeployPageSchema).default([]),
+    shell_sections:              z.array(websiteDeployShellSectionSchema).default([]),
+    shell_default_values:        z.record(jsonObject).optional(),
+    smart_collection_placeholders: z.record(websiteDeploySmartCollectionPlaceholderSchema).optional(),
+    // Marketplace metadata — synced on every template-deploy
+    name:              z.string().optional(),
+    short_description: z.string().optional(),
+    description:       z.string().optional(),
+    demo_url:          z.string().url().optional(),
+    features:          z.array(z.string()).default([]),
+    pricing_tier:      z.enum(["free", "premium", "enterprise"]).default("free"),
+    color_palette:     z.array(z.string()).default([]),
+    tags:              z.array(z.string()).default([]),
+    category:          z.string().optional(),
+    industry:          z.string().optional(),
+    preview_image:     z.string().optional(),
   })
   .superRefine((manifest, ctx) => {
     const keys = new Set(manifest.section_types.map((st) => st.key));

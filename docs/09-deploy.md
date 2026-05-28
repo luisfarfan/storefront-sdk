@@ -149,6 +149,13 @@ npx proxima-templateizer website-deploy . --dry-run
 # Forzar cambios breaking (cambios de tipo, renombres de atributos)
 npx proxima-templateizer website-deploy . --force
 
+# Deploy de una sola página (el flag es repetible para varias)
+npx proxima-templateizer website-deploy . --page /contacto
+npx proxima-templateizer website-deploy . --page /blog --page /sobre-nosotros
+
+# Por resolver_kind (páginas dinámicas sin path fijo)
+npx proxima-templateizer website-deploy . --page product_detail
+
 # Sobreescribir credenciales (útil en CI)
 npx proxima-templateizer website-deploy . \
   --api-url https://api.proxima.io \
@@ -157,6 +164,21 @@ npx proxima-templateizer website-deploy . \
 ```
 
 > Si `npx proxima-templateizer` termina sin output, usar `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .`
+
+### `--page` — deploy página por página
+
+El flag `--page` filtra el array `pages` del manifiesto antes de enviarlo a la API.
+Los `section_types` **siempre se envían completos** porque la API los necesita para el scaffolding.
+
+Si el valor no coincide con ningún `path` ni `resolver_kind` del manifiesto, el CLI muestra error con las opciones disponibles:
+
+```
+✗ No pages matched filter: /pagina-inexistente
+  Available: /, /productos, product_detail, /carrito, /checkout, ...
+```
+
+> **Cuándo usarlo:** cuando se construye el storefront de forma incremental y se quiere ir
+> subiendo cada página conforme se termina, sin deployar secciones de páginas incompletas.
 
 ---
 
@@ -306,3 +328,4 @@ Ver [08 — Template Authoring](./08-template-authoring.md) para ese flujo.
 - [ ] Los `key` en el manifiesto coinciden con los de `SECTION_MAP`
 - [ ] `npx proxima-templateizer website-deploy . --dry-run` muestra el payload esperado
 - [ ] Si hubo seed que recreó el website: service account con `website_id` actual (403 si no)
+- [ ] Para deployar solo algunas páginas: usar `--page /ruta` (repetible)
