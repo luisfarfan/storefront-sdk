@@ -24,6 +24,8 @@ const commands = new Set([
   "status",
   "website-deploy",
   "template-deploy",
+  "template-create",
+  "template-publish",
 ]);
 
 export async function run(argv = process.argv.slice(2)): Promise<number> {
@@ -62,6 +64,12 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
   }
   if (command === "template-deploy") {
     return templateDeployCommand(targetPath, argv.slice(2));
+  }
+  if (command === "template-create") {
+    return templateCreateCommand(targetPath, argv.slice(2));
+  }
+  if (command === "template-publish") {
+    return templatePublishCommand(targetPath, argv.slice(2));
   }
   if (command === "preview") {
     console.log("Run preview with: pnpm --filter @proxima-io/catalog-preview dev");
@@ -903,6 +911,375 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
   return 0;
 }
 
+/**
+ * template-create — idempotent create-or-update of a cms_website_templates row.
+ *
+ * Checks whether a template with the given template_key already exists in the API:
+ *   - If not → POST to create it with the provided metadata.
+ *   - If yes → PATCH to update it (idempotent, safe to re-run).
+ *
+ * Metadata is sourced from (in priority order):
+ *   1. CLI flags (--name, --description, --category, --pricing-tier, --demo-url, --preview-image, --tags)
+ *   2. proxima.website.json → marketplace_metadata block
+ *   3. proxima.website.json top-level fields (backward compat with old template-publish)
+ *   4. Sensible defaults (pricing_tier=free, category=ecommerce, demo_url=https://<key>.proxima.pe)
+ *
+ * Optionally, pass --publish-manifest to also upload the structure to S3 and PATCH
+ * the /manifest pointer on the API — same flow as the former template-publish command.
+ */
+async function templateCreateCommand(targetPath: string, argv: string[]): Promise<number> {
+  const dotenv = loadDotEnv(targetPath);
+
+  const apiUrl             = readFlag(argv, "--api-url")        ?? resolveEnvVar("PROXIMA_API_URL", dotenv);
+  const serviceKey         = readFlag(argv, "--service-key")    ?? resolveEnvVar("PROXIMA_SERVICE_KEY", dotenv);
+  const templateKey        = readFlag(argv, "--template-key")   ?? resolveEnvVar("PROXIMA_TEMPLATE_KEY", dotenv);
+  const s3Bucket           = readFlag(argv, "--s3-bucket")      ?? resolveEnvVar("S3_TEMPLATES_BUCKET", dotenv);
+  const s3Region           = readFlag(argv, "--s3-region")      ?? resolveEnvVar("S3_TEMPLATES_REGION", dotenv) ?? resolveEnvVar("AWS_REGION", dotenv);
+  const dryRun             = argv.includes("--dry-run");
+  const publishManifest    = argv.includes("--publish-manifest");
+  const localOnly          = argv.includes("--local-only");
+
+  // CLI metadata overrides (flags win over manifest)
+  const nameOverride           = readFlag(argv, "--name");
+  const descOverride           = readFlag(argv, "--description");
+  const categoryOverride       = readFlag(argv, "--category");
+  const pricingTierOverride    = readFlag(argv, "--pricing-tier");
+  const demoUrlOverride        = readFlag(argv, "--demo-url");
+  const previewImageOverride   = readFlag(argv, "--preview-image");
+  const tagsOverride           = readFlag(argv, "--tags");  // comma-separated string
+
+  if (!apiUrl) {
+    console.error("✗ PROXIMA_API_URL is required (set in .env or pass --api-url)");
+    return 1;
+  }
+  if (!serviceKey) {
+    console.error("✗ PROXIMA_SERVICE_KEY is required (set in .env or pass --service-key)");
+    return 1;
+  }
+  if (!templateKey) {
+    console.error("✗ PROXIMA_TEMPLATE_KEY is required (set in .env or pass --template-key)");
+    return 1;
+  }
+
+  // Read raw JSON before schema validation (which strips unknown fields like marketplace_metadata).
+  let rawManifest: Record<string, unknown> = {};
+  let manifest: ReturnType<typeof loadWebsiteManifest> | null = null;
+  const manifestPath = findWebsiteManifestPath(targetPath);
+  if (manifestPath) {
+    try {
+      rawManifest = readJson(manifestPath) as Record<string, unknown>;
+      manifest = loadWebsiteManifest(targetPath);
+    } catch (err: unknown) {
+      console.error(`✗ ${(err as Error).message}`);
+      return 1;
+    }
+  }
+
+  // marketplace_metadata block (new) — falls back to top-level fields (legacy compat).
+  const marketplaceMeta = (rawManifest.marketplace_metadata ?? {}) as Record<string, unknown>;
+  const topLevel = rawManifest;
+
+  const tags = tagsOverride
+    ? tagsOverride.split(",").map((t) => t.trim()).filter(Boolean)
+    : ((marketplaceMeta.tags ?? topLevel.tags) as string[] | undefined) ?? [];
+
+  const payload: Record<string, unknown> = {
+    template_key: templateKey,
+    name:
+      nameOverride ??
+      (marketplaceMeta.name as string | undefined) ??
+      (topLevel.name as string | undefined) ??
+      templateKey,
+    description:
+      descOverride ??
+      (marketplaceMeta.short_description as string | undefined) ??
+      (marketplaceMeta.description as string | undefined) ??
+      (topLevel.short_description as string | undefined) ??
+      (topLevel.description as string | undefined) ??
+      "",
+    category:
+      categoryOverride ??
+      (marketplaceMeta.category as string | undefined) ??
+      (topLevel.category as string | undefined) ??
+      "ecommerce",
+    pricing_tier:
+      pricingTierOverride ??
+      (marketplaceMeta.pricing_tier as string | undefined) ??
+      "free",
+    demo_url:
+      demoUrlOverride ??
+      (marketplaceMeta.demo_url as string | undefined) ??
+      `https://${templateKey}.proxima.pe`,
+    preview_image:
+      previewImageOverride ??
+      (marketplaceMeta.preview_image as string | undefined) ??
+      (topLevel.preview_image as string | undefined) ??
+      null,
+    tags,
+    features: ((marketplaceMeta.features ?? topLevel.features) as string[] | undefined) ?? [],
+    preview_images:
+      ((marketplaceMeta.preview_images ?? topLevel.preview_images) as unknown[] | undefined) ?? [],
+    color_palette:
+      ((marketplaceMeta.color_palette ?? topLevel.color_palette) as unknown | undefined) ?? null,
+    industry: (topLevel.industry as string | undefined) ?? null,
+  };
+
+  // Build structure upfront if we'll need to publish the manifest.
+  let structure: TemplateStructure | null = null;
+  if (publishManifest) {
+    if (!manifest) {
+      console.error("✗ proxima.website.json not found — required for --publish-manifest");
+      return 1;
+    }
+    try {
+      structure = buildTemplateStructure(manifest);
+    } catch (err: unknown) {
+      console.error(`✗ ${(err as Error).message}`);
+      return 1;
+    }
+  }
+
+  const manifestKey = `${templateKey}/manifest.json`;
+  const useLocalMode = localOnly || !s3Bucket;
+
+  if (dryRun) {
+    console.log("Dry run — no API call made.\n");
+    console.log(`Template key: ${templateKey}`);
+    console.log("Action: POST (create) or PATCH (update) — determined at runtime by GET check");
+    console.log("\nPayload:");
+    console.log(JSON.stringify(payload, null, 2));
+    if (publishManifest && structure) {
+      console.log(`\nManifest mode: ${useLocalMode ? `local (TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey})` : `S3 s3://${s3Bucket}/${manifestKey} (region=${s3Region ?? "default"})`}`);
+      console.log("\nStructure:");
+      console.log(JSON.stringify(structure, null, 2));
+    }
+    return 0;
+  }
+
+  const start = Date.now();
+  const baseUrl = apiUrl.replace(/\/$/, "");
+
+  // Step 1 — check if the template already exists.
+  let existingId: string | null = null;
+  try {
+    const checkRes = await fetchWithRetry(
+      `${baseUrl}/api/v1/admin/cms/website-templates?template_key=${encodeURIComponent(templateKey)}`,
+      { headers: { authorization: `Bearer ${serviceKey}` } },
+    );
+    if (checkRes.ok) {
+      const data = await checkRes.json() as unknown;
+      // API may return an array or a paginated object { items: [...] }
+      const items = Array.isArray(data)
+        ? (data as Array<Record<string, unknown>>)
+        : (((data as Record<string, unknown>).items ?? (data as Record<string, unknown>).results ?? []) as Array<Record<string, unknown>>);
+      const match = items.find((t) => t.template_key === templateKey);
+      existingId = (match?.id as string | undefined) ?? null;
+    } else if (checkRes.status === 403) {
+      console.error("✗ Access denied. The service key does not have cms:templates:write scope.");
+      return 1;
+    } else if (checkRes.status !== 404) {
+      const text = await checkRes.text();
+      console.error(`✗ Failed to check template existence (${checkRes.status}): ${text}`);
+      return 1;
+    }
+  } catch (err: unknown) {
+    console.error(`✗ Network error checking template: ${(err as Error).message}`);
+    return 1;
+  }
+
+  // Step 2 — create or update the template row.
+  const action = existingId ? "updated" : "created";
+  let rowResponse: Response;
+  try {
+    if (existingId) {
+      rowResponse = await fetchWithRetry(`${baseUrl}/api/v1/admin/cms/website-templates/${existingId}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json", authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      rowResponse = await fetchWithRetry(`${baseUrl}/api/v1/admin/cms/website-templates`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify(payload),
+      });
+    }
+  } catch (err: unknown) {
+    console.error(`✗ Network error: ${(err as Error).message}`);
+    return 1;
+  }
+
+  const rowText = await rowResponse.text();
+  if (rowResponse.status === 403) {
+    console.error("✗ Access denied. The service key does not have cms:templates:write scope.");
+    return 1;
+  }
+  if (!rowResponse.ok) {
+    console.error(`✗ Template ${action} failed (${rowResponse.status}): ${rowText}`);
+    return 1;
+  }
+
+  let createdRow: Record<string, unknown> = {};
+  try { createdRow = JSON.parse(rowText) as Record<string, unknown>; } catch { /* ignore */ }
+
+  const elapsed1 = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(`✓ Template '${templateKey}' ${action} (id=${createdRow.id ?? "?"}) in ${elapsed1}s`);
+
+  if (!publishManifest || !structure) {
+    return 0;
+  }
+
+  // Step 3 — upload structure to S3 (or skip in local mode).
+  let manifestVersionId: string | undefined;
+  if (!useLocalMode) {
+    try {
+      manifestVersionId = await uploadManifestToS3({
+        bucket: s3Bucket!,
+        key: manifestKey,
+        region: s3Region,
+        body: JSON.stringify(structure),
+      });
+      console.log(`✓ Uploaded ${manifestKey} to s3://${s3Bucket} (VersionId=${manifestVersionId})`);
+    } catch (err: unknown) {
+      console.error(`✗ S3 upload failed: ${(err as Error).message}`);
+      console.error("  Check AWS credentials and that the 'aws' CLI is installed and on PATH.");
+      return 1;
+    }
+  } else {
+    console.log(`  Local mode — skipped S3 upload. API reads from TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey}`);
+  }
+
+  // Step 4 — PATCH /manifest on the API with the S3 pointer.
+  const manifestUrl = `${baseUrl}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/manifest`;
+  let manifestResponse: Response;
+  try {
+    manifestResponse = await fetchWithRetry(manifestUrl, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({
+        manifest_s3_key: manifestKey,
+        manifest_s3_version_id: manifestVersionId ?? null,
+      }),
+    });
+  } catch (err: unknown) {
+    console.error(`✗ Network error patching manifest: ${(err as Error).message}`);
+    return 1;
+  }
+
+  const manifestText = await manifestResponse.text();
+  const elapsed2 = ((Date.now() - start) / 1000).toFixed(1);
+
+  if (manifestResponse.status === 404) {
+    console.error(`✗ Template '${templateKey}' not found when patching manifest (unexpected after create/update).`);
+    return 1;
+  }
+  if (manifestResponse.status === 403) {
+    console.error("✗ Access denied patching manifest.");
+    return 1;
+  }
+  if (!manifestResponse.ok) {
+    console.error(`✗ Manifest deploy failed (${manifestResponse.status}): ${manifestText}`);
+    return 1;
+  }
+
+  const pageCount = structure.pages.length;
+  const shellCount = structure.shell_sections.length;
+  const placeholderCount = Object.keys(structure.smart_collection_placeholders).length;
+
+  console.log(`✓ Manifest published in ${elapsed2}s`);
+  console.log(`  Pages: ${pageCount}  |  Shell sections: ${shellCount}  |  Smart collection placeholders: ${placeholderCount}`);
+  if (manifestVersionId) {
+    console.log(`  Manifest:  s3://${s3Bucket}/${manifestKey}`);
+    console.log(`  VersionId: ${manifestVersionId}`);
+  } else {
+    console.log(`  Manifest:  (local) ${manifestKey}`);
+  }
+  return 0;
+}
+
+/**
+ * template-publish — backward-compatible alias for `template-create --publish-manifest`.
+ *
+ * This command now delegates to templateCreateCommand, which handles both the
+ * idempotent create-or-update of the template row AND the S3 manifest upload.
+ * Existing CI workflows using `template-publish` continue to work unchanged.
+ */
+async function templatePublishCommand(targetPath: string, argv: string[]): Promise<number> {
+  const args = argv.includes("--publish-manifest") ? argv : [...argv, "--publish-manifest"];
+  return templateCreateCommand(targetPath, args);
+}
+
+/**
+ * Fetch with simple exponential-backoff retry on 5xx errors (3 attempts).
+ */
+async function fetchWithRetry(url: string, init: RequestInit = {}, attempts = 3): Promise<Response> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.status < 500 || i === attempts - 1) return res;
+      // 5xx — wait and retry
+      await new Promise<void>((r) => setTimeout(r, 500 * 2 ** i));
+    } catch (err) {
+      lastError = err;
+      if (i === attempts - 1) break;
+      await new Promise<void>((r) => setTimeout(r, 500 * 2 ** i));
+    }
+  }
+  throw lastError ?? new Error("fetch failed after retries");
+}
+
+/**
+ * Shell out to `aws s3api put-object` to upload a manifest. We avoid pulling
+ * the AWS SDK as a dependency on purpose: the AWS CLI is universally available
+ * on CI runners and dev machines, and shelling out keeps templateizer dep-free.
+ *
+ * Returns the VersionId from the S3 response (versioned buckets always return
+ * one; on unversioned buckets we fall back to "null").
+ */
+async function uploadManifestToS3(args: {
+  bucket: string;
+  key: string;
+  region?: string;
+  body: string;
+}): Promise<string> {
+  const { spawn } = await import("node:child_process");
+  return new Promise<string>((resolve, reject) => {
+    const cliArgs = [
+      "s3api",
+      "put-object",
+      "--bucket", args.bucket,
+      "--key", args.key,
+      "--body", "-",
+      "--content-type", "application/json",
+      "--output", "json",
+    ];
+    if (args.region) {
+      cliArgs.push("--region", args.region);
+    }
+    const proc = spawn("aws", cliArgs, { stdio: ["pipe", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+    proc.on("error", (err) => reject(new Error(`Failed to spawn aws CLI: ${err.message}`)));
+    proc.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`aws s3api put-object exited ${code}: ${stderr.trim()}`));
+        return;
+      }
+      try {
+        const parsed = JSON.parse(stdout || "{}") as { VersionId?: string };
+        resolve(parsed.VersionId ?? "null");
+      } catch (err: unknown) {
+        reject(new Error(`Failed to parse aws CLI response: ${(err as Error).message}`));
+      }
+    });
+    proc.stdin.write(args.body);
+    proc.stdin.end();
+  });
+}
+
 function printHelp() {
   console.log(`Usage: proxima-templateizer <command> <target>
 
@@ -921,6 +1298,9 @@ Commands:
   sync              Validate, register, optionally deploy metadata, optionally publish.
   status            Show admin registry state and storefront visibility.
   website-deploy    Deploy section types + page scaffolding to a specific website.
+  template-deploy   [LEGACY] Push inline structure to the template DB column.
+  template-create   Idempotent create-or-update of a template row in the API.
+  template-publish  Alias for template-create --publish-manifest (backward compat).
 
 Website deploy options:
   --dry-run         Print the payload without calling the API.
@@ -937,6 +1317,28 @@ Template deploy options:
   --template-key    Override PROXIMA_TEMPLATE_KEY.
   --service-key     Override PROXIMA_SERVICE_KEY.
   --api-url         Override PROXIMA_API_URL.
+
+Template create options:
+  --dry-run             Print planned payload without calling the API.
+  --publish-manifest    Also upload structure to S3 and PATCH the manifest pointer.
+  --local-only          Skip S3 upload (API reads from TEMPLATES_LOCAL_FALLBACK_DIR).
+  --s3-bucket           Override S3_TEMPLATES_BUCKET (required with --publish-manifest in prod).
+  --s3-region           Override S3_TEMPLATES_REGION (defaults to AWS_REGION).
+  --template-key        Override PROXIMA_TEMPLATE_KEY.
+  --service-key         Override PROXIMA_SERVICE_KEY.
+  --api-url             Override PROXIMA_API_URL.
+  --name <string>       Template display name.
+  --description <str>   Short description shown in the marketplace.
+  --category <str>      Category (default: ecommerce).
+  --pricing-tier <str>  Pricing tier: free|pro (default: free).
+  --demo-url <url>      Live demo URL (default: https://<template-key>.proxima.pe).
+  --preview-image <url> Hero preview image URL.
+  --tags <a,b,c>        Comma-separated tags.
+
+  Metadata priority: CLI flags > proxima.website.json marketplace_metadata > defaults.
+
+Template publish options (alias — same flags as template-create):
+  Delegates to template-create --publish-manifest. All flags above are accepted.
 
 Template registry options:
   --dry-run         Print planned action without calling the API.
