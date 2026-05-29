@@ -173,13 +173,17 @@ Errores:
 ## Comandos del CLI
 
 ```bash
+# Primera vez — setup interactivo (crea .proxima/credentials.json)
+templateizer init
+
 # Deploy de section types + pages a un website específico
 templateizer website-deploy
 
 # Con opciones
 templateizer website-deploy --dry-run                    # ver payload sin llamar la API
-templateizer website-deploy --force                      # aplicar breaking changes
-templateizer website-deploy --service-key pxa_live_xxx   # override de .env
+templateizer website-deploy --force                      # aplicar breaking changes sin prompt
+templateizer website-deploy --yes                        # saltar confirmación pre-deploy
+templateizer website-deploy --service-key pxa_live_xxx   # override de credentials
 
 # Validar el proxima.template.json
 templateizer validate
@@ -190,6 +194,29 @@ templateizer publish
 templateizer deploy
 templateizer sync
 ```
+
+### Archivo de credenciales `.proxima/credentials.json`
+
+Alternativa moderna al `.env`. Se crea con `templateizer init`.
+Se agrega a `.gitignore` automáticamente. Nunca commitear.
+
+```json
+{
+  "api_url":      "https://api.proxima.io",
+  "service_key":  "pxa_live_...",
+  "domain":       "mitienda.proxima.app",
+  "template_key": "mi-template"
+}
+```
+
+**Prioridad de credenciales** (mayor → menor): CLI flags → `process.env` → `.proxima/credentials.json` → `.env`
+
+### UX interactiva del CLI
+
+- **Spinner** durante llamadas a la API (stderr, no interfiere con stdout/JSON).
+- **Confirmación pre-deploy**: antes de `website-deploy`, muestra resumen y pide Y/n. Saltar con `--yes` o `CI=1`.
+- **Breaking changes interactivos**: en vez de fallar con error 409, pregunta `¿Aplicar de todas formas?` y re-ejecuta con `--force` si el usuario acepta.
+- **CI-safe**: todos los prompts se deshabilitan automáticamente cuando `CI=1`, `GITHUB_ACTIONS=1`, `NO_INTERACTIVE=1` o stdin no es TTY.
 
 ---
 

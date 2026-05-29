@@ -43,7 +43,36 @@ Lo que el deploy sí hace:
 - Registrar los **section types** del storefront en ese website
 - Crear las **páginas** definidas y poblarlas con secciones vacías listas para editar
 
-Para verificar que tienes todo lo necesario en el `.env`:
+---
+
+## Configurar credenciales
+
+### Opción A — Archivo JSON (recomendado)
+
+```bash
+npx proxima-templateizer init
+```
+
+El wizard interactivo te pregunta API URL, dominio y service key, y crea `.proxima/credentials.json` automáticamente. También lo agrega al `.gitignore` para que nunca se commitee.
+
+El archivo resultante:
+
+```json
+// .proxima/credentials.json
+{
+  "api_url":     "https://api.proxima.io",
+  "domain":      "tienda-deportes.proxima.app",
+  "service_key": "pxa_live_..."
+}
+```
+
+Para usar un archivo en una ruta personalizada (útil con múltiples clientes):
+
+```bash
+npx proxima-templateizer website-deploy . --credentials ~/secrets/cliente-a.json
+```
+
+### Opción B — Variables de entorno / `.env`
 
 ```env
 PROXIMA_API_URL=https://api.proxima.io
@@ -51,6 +80,8 @@ PROXIMA_DOMAIN=tienda-deportes.proxima.app   # debe coincidir con el website en 
 PROXIMA_WEBSITE_DOMAIN=tienda-deportes.proxima.app   # alias aceptado por el CLI
 PROXIMA_SERVICE_KEY=pxa_live_...             # scope cms:websites:write
 ```
+
+**Prioridad de resolución**: CLI flags → `process.env` → credentials JSON → `.env`
 
 ---
 
@@ -138,7 +169,14 @@ npx proxima-templateizer validate .
 npx proxima-templateizer website-deploy .
 ```
 
-El CLI lee el `.env` del proyecto para autenticarse y determinar el website de destino.
+El CLI mostrará un resumen del deploy y pedirá confirmación antes de proceder:
+
+```
+Deploy to: tienda-deportes.proxima.app
+  3 section type(s)  ·  5 page(s)
+
+  Continue? (Y/n) ›
+```
 
 ### Flags disponibles
 
@@ -146,8 +184,11 @@ El CLI lee el `.env` del proyecto para autenticarse y determinar el website de d
 # Ver qué se enviaría sin hacer la llamada
 npx proxima-templateizer website-deploy . --dry-run
 
-# Forzar cambios breaking (cambios de tipo, renombres de atributos)
+# Forzar cambios breaking sin confirmación interactiva
 npx proxima-templateizer website-deploy . --force
+
+# Saltar la confirmación pre-deploy (útil en scripts o CI)
+npx proxima-templateizer website-deploy . --yes
 
 # Deploy de una sola página (el flag es repetible para varias)
 npx proxima-templateizer website-deploy . --page /contacto
@@ -161,6 +202,9 @@ npx proxima-templateizer website-deploy . \
   --api-url https://api.proxima.io \
   --service-key pxa_live_... \
   --domain tienda.proxima.app
+
+# Usar un archivo de credenciales específico
+npx proxima-templateizer website-deploy . --credentials ~/secrets/cliente-a.json
 ```
 
 > Si `npx proxima-templateizer` termina sin output, usar `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .`
@@ -234,6 +278,22 @@ Pages
 |--------|---------|
 | Cambiar el `type` de un atributo | El contenido guardado quedaría inválido |
 | Renombrar un atributo (`name`) | Equivale a delete+create — el contenido se pierde |
+
+Cuando el CLI detecta breaking changes muestra los detalles y pregunta interactivamente:
+
+```
+✗ Breaking changes detectados:
+
+  Section type : hero
+  Attribute    : title
+  Change       : type from 'text' to 'rich_text'
+
+  Note: existing attribute content may be incompatible with the new type.
+
+  Apply breaking changes anyway? (y/N) ›
+```
+
+Si aceptas, el CLI re-ejecuta el deploy con `--force` automáticamente. En CI el prompt se omite y el deploy falla (correcto — el `--force` debe ser explícito en CI).
 
 ---
 
@@ -318,9 +378,25 @@ Ver [08 — Template Authoring](./08-template-authoring.md) para ese flujo.
 
 ---
 
+## Uso en CI
+
+En CI los prompts interactivos se deshabilitan automáticamente (cuando `CI=1`, `GITHUB_ACTIONS=1`, `NO_INTERACTIVE=1` o stdin no es TTY). Las credenciales deben venir de secrets del entorno:
+
+```yaml
+# GitHub Actions
+- name: Deploy website
+  run: npx proxima-templateizer website-deploy .
+  env:
+    PROXIMA_API_URL: ${{ secrets.PROXIMA_API_URL }}
+    PROXIMA_SERVICE_KEY: ${{ secrets.PROXIMA_SERVICE_KEY }}
+    PROXIMA_DOMAIN: ${{ secrets.PROXIMA_DOMAIN }}
+```
+
+---
+
 ## Checklist antes de hacer deploy
 
-- [ ] `.env` tiene `PROXIMA_SERVICE_KEY`, `PROXIMA_DOMAIN` y `PROXIMA_API_URL`
+- [ ] Credenciales configuradas: `.proxima/credentials.json` (run `init`) o variables de entorno
 - [ ] El website existe en el admin de Proxima con ese dominio exacto
 - [ ] `proxima.website.json` existe en la raíz del proyecto
 - [ ] Cada sección en `src/sections/` tiene su entrada en `section_types`
