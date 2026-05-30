@@ -2616,3 +2616,28 @@ class ProximaAnalytics {
 
 /** Singleton analytics client. Call `analytics.init()` once from SiteLayout. */
 export const analytics = new ProximaAnalytics();
+
+export {
+  createFixtureBundle,
+  createStorefrontDataSource,
+  validateFixtureBundle,
+  resolveStorefrontDataSourceForRequest,
+  FixtureGuestOrderError,
+} from "./fixtures-commerce.js";
+
+export type {
+  FixtureBundle,
+  FixtureBundleInput,
+  FixtureBrandListingParams,
+  FixtureCartMutationParams,
+  FixtureCatalogItem,
+  FixtureListingParams,
+  FixtureProductListingParams,
+  FixtureSearchParams,
+  ResolveStorefrontDataSourceOptions,
+  StorefrontCartParams,
+  StorefrontDataMode,
+  StorefrontDataSource,
+  StorefrontDataSourceConfig,
+  ValidateFixtureBundleOptions,
+} from "./fixtures-commerce.js";
