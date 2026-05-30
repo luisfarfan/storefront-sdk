@@ -689,11 +689,25 @@ const readyPayload = JSON.stringify({
         node.removeAttribute('contenteditable');
         node.removeAttribute('data-cms-inline-editing');
         node.removeAttribute('spellcheck');
-        if (!commit && inlineEditOriginal !== null) {
-          // Revert visual text
-          setNodeText(node, inlineEditOriginal);
-        }
-        if (commit && attributeKey != null) {
+        if (!commit) {
+          // Revert visual to the value we saw before editing started.
+          if (inlineEditOriginal !== null) {
+            setNodeText(node, inlineEditOriginal);
+          }
+          // CRITICAL: every keystroke streamed cms:inline-edit → builder
+          // wrote them to its store. Without an explicit cancel signal, the
+          // store would be left with a draft equal to whatever the user
+          // typed before pressing Esc — silently dirty. The builder routes
+          // cms:inline-edit-cancel to store.resetAttributeDraft so the
+          // baseline is restored and the dirty counter / chip go back to
+          // their pre-edit state.
+          if (attributeKey != null) {
+            send('cms:inline-edit-cancel', {
+              attributeKey,
+              attributeType,
+            });
+          }
+        } else if (attributeKey != null) {
           const raw = node.textContent ?? '';
           const value = attributeType === 'number' ? Number(raw) : raw;
           send('cms:inline-edit-commit', {
