@@ -368,6 +368,11 @@ const readyPayload = JSON.stringify({
 
       const applyDraftToNode = (node, draftEntry) => {
         if (!(node instanceof Element) || !draftEntry) return false;
+        // Don't overwrite content the user is currently typing into — the
+        // builder still tracks every keystroke via cms:inline-edit, but the
+        // SDK defers visual re-application until they blur. Otherwise the
+        // 280ms debounced cms:replace-draft-state would erase mid-word edits.
+        if (node.hasAttribute('data-cms-inline-editing')) return false;
         const attributeType = node.dataset.cmsAttributeType || null;
         const value = draftEntry.value;
         let applied = false;
@@ -659,6 +664,153 @@ const readyPayload = JSON.stringify({
         }
       };
 
+      // ────────────────────────────────────────────────────────────────
+      // WYSIWYG inline edit — double-click any text/number attribute and
+      // type directly in the iframe. Every keystroke is streamed to the
+      // builder via `cms:inline-edit`; on blur/Enter the edit commits, on
+      // Escape it reverts. `applyDraftToNode` already skips elements that
+      // carry `data-cms-inline-editing` so the round-trip drafting
+      // pipeline never fights the user's keyboard.
+      // ────────────────────────────────────────────────────────────────
+      const INLINE_EDITABLE_TYPES = new Set(['text', 'rich_text', 'number']);
+      /** Holds the in-flight inline edit's original textContent for Escape revert. */
+      let inlineEditOriginal = null;
+      let inlineEditNode = null;
+
+      const stopInlineEdit = (commit) => {
+        if (!(inlineEditNode instanceof Element)) {
+          inlineEditNode = null;
+          inlineEditOriginal = null;
+          return;
+        }
+        const node = inlineEditNode;
+        const attributeKey = readAttributeKey(node);
+        const attributeType = node.dataset.cmsAttributeType || 'text';
+        node.removeAttribute('contenteditable');
+        node.removeAttribute('data-cms-inline-editing');
+        node.removeAttribute('spellcheck');
+        if (!commit) {
+          // Revert visual to the value we saw before editing started.
+          if (inlineEditOriginal !== null) {
+            setNodeText(node, inlineEditOriginal);
+          }
+          // CRITICAL: every keystroke streamed cms:inline-edit → builder
+          // wrote them to its store. Without an explicit cancel signal, the
+          // store would be left with a draft equal to whatever the user
+          // typed before pressing Esc — silently dirty. The builder routes
+          // cms:inline-edit-cancel to store.resetAttributeDraft so the
+          // baseline is restored and the dirty counter / chip go back to
+          // their pre-edit state.
+          if (attributeKey != null) {
+            send('cms:inline-edit-cancel', {
+              attributeKey,
+              attributeType,
+            });
+          }
+        } else if (attributeKey != null) {
+          const raw = node.textContent ?? '';
+          const value = attributeType === 'number' ? Number(raw) : raw;
+          send('cms:inline-edit-commit', {
+            attributeKey,
+            attributeType,
+            value: attributeType === 'number' && Number.isNaN(value) ? null : value,
+          });
+        }
+        inlineEditNode = null;
+        inlineEditOriginal = null;
+      };
+
+      const startInlineEdit = (node) => {
+        if (!(node instanceof Element)) return;
+        const attributeType = node.dataset.cmsAttributeType || null;
+        if (!attributeType || !INLINE_EDITABLE_TYPES.has(attributeType)) return;
+        const attributeKey = readAttributeKey(node);
+        if (attributeKey == null) return;
+
+        // Commit any previous edit before starting a new one.
+        if (inlineEditNode && inlineEditNode !== node) {
+          stopInlineEdit(true);
+        }
+
+        inlineEditNode = node;
+        inlineEditOriginal = node.textContent ?? '';
+        node.setAttribute('contenteditable', 'plaintext-only');
+        node.setAttribute('data-cms-inline-editing', 'true');
+        node.setAttribute('spellcheck', 'true');
+
+        // Select all so first keystroke replaces (Webflow-style). Falls back
+        // gracefully on browsers that lack Selection API support.
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          const sel = window.getSelection();
+          if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+        } catch (_) {
+          /* selection unavailable; user can still type */
+        }
+        node.focus();
+
+        send('cms:inline-edit-start', {
+          attributeKey,
+          attributeType,
+        });
+      };
+
+      const onInlineInput = (event) => {
+        const node = inlineEditNode;
+        if (!(node instanceof Element)) return;
+        if (event.target !== node) return;
+        const attributeKey = readAttributeKey(node);
+        if (attributeKey == null) return;
+        const attributeType = node.dataset.cmsAttributeType || 'text';
+        const raw = node.textContent ?? '';
+        const value = attributeType === 'number' ? Number(raw) : raw;
+        send('cms:inline-edit', {
+          attributeKey,
+          attributeType,
+          value: attributeType === 'number' && Number.isNaN(value) ? null : value,
+        });
+      };
+
+      const onInlineKeyDown = (event) => {
+        if (!(inlineEditNode instanceof Element)) return;
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          stopInlineEdit(false);
+          return;
+        }
+        if (event.key === 'Enter') {
+          const attributeType = inlineEditNode.dataset.cmsAttributeType || 'text';
+          // rich_text would allow multi-line; text/number commit on Enter.
+          if (attributeType !== 'rich_text') {
+            event.preventDefault();
+            stopInlineEdit(true);
+          }
+        }
+      };
+
+      const onInlineBlur = (event) => {
+        if (!(inlineEditNode instanceof Element)) return;
+        if (event.target !== inlineEditNode) return;
+        stopInlineEdit(true);
+      };
+
+      const onDblClick = (event) => {
+        if (previewMode !== 'edit') return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const attributeElement = target.closest('[data-cms-attribute-key]');
+        if (!(attributeElement instanceof HTMLElement)) return;
+        const attributeType = attributeElement.dataset.cmsAttributeType || null;
+        if (!attributeType || !INLINE_EDITABLE_TYPES.has(attributeType)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        startInlineEdit(attributeElement);
+      };
+
       const notifyReady = () => {
         send('cms:ready', {
           ...READY_PAYLOAD,
@@ -676,6 +828,10 @@ const readyPayload = JSON.stringify({
       applyPreviewMode(previewMode);
       document.addEventListener('click', onClick, true);
       document.addEventListener('mouseover', onMouseOver, true);
+      document.addEventListener('dblclick', onDblClick, true);
+      document.addEventListener('input', onInlineInput, true);
+      document.addEventListener('keydown', onInlineKeyDown, true);
+      document.addEventListener('blur', onInlineBlur, true);
       window.addEventListener('message', onMessage);
       window.addEventListener('load', notifyReady);
       document.addEventListener('astro:page-load', notifyReady);

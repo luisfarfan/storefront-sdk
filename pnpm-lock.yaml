@@ -116,12 +116,18 @@ importers:
 
   packages/templateizer:
     dependencies:
+      '@clack/prompts':
+        specifier: ^1.4.0
+        version: 1.4.0
       '@proxima-io/template-registry-client':
         specifier: workspace:*
         version: link:../template-registry-client
       '@proxima-io/template-schema':
         specifier: workspace:*
         version: link:../template-schema
+      picocolors:
+        specifier: ^1.1.1
+        version: 1.1.1
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

@@ -8,7 +8,7 @@ Monorepo de paquetes SDK para storefronts y templates de Proxima.
 
 | Paquete | Descripción | README |
 |---------|-------------|--------|
-| [`@proxima-io/storefront-core`](packages/storefront-core) | Cliente HTTP principal — composición CMS, catálogo, auth de compradores, carrito, órdenes, wishlist, SEO y analytics | [README](packages/storefront-core/README.md) |
+| [`@proxima-io/storefront-core`](packages/storefront-core) | Cliente HTTP principal — composición CMS, catálogo, auth de compradores, carrito, órdenes, wishlist, SEO, analytics e **in-process cache** (`websiteCache`, `compositionCache`, `handleCacheInvalidateWebhook`) | [README](packages/storefront-core/README.md) |
 | [`@proxima-io/storefront-cms`](packages/storefront-cms) | Normalización de secciones, resolución de tenant y detección de preview | [README](packages/storefront-cms/README.md) |
 | [`@proxima-io/storefront-commerce`](packages/storefront-commerce) | Tipos de commerce compartidos (`ResolverKind`) y helpers | [README](packages/storefront-commerce/README.md) |
 | [`@proxima-io/storefront-builder-sdk`](packages/storefront-builder-sdk) | Bridge postMessage con el Builder visual + componentes Astro editables | [README](packages/storefront-builder-sdk/README.md) |
@@ -59,7 +59,7 @@ proxima skills install    # Cursor + Claude agent workflows
 | [03 — Architecture](docs/03-architecture.md) | SiteLayout, SectionRenderer, catch-all |
 | [04 — Sections & Attributes](docs/04-sections-and-attributes.md) | Schema, values, attributesMeta, registry |
 | [05 — Smart collections](docs/05-smart-collections.md) | Tipos, placeholders, `auto:` |
-| [06 — Builder integration](docs/06-builder-integration.md) | EditableSection, preview bridge |
+| [06 — Builder integration](docs/06-builder-integration.md) | EditableSection, preview bridge, cache invalidation |
 | [07 — Commerce](docs/07-commerce.md) | Carrito, órdenes, checkout |
 | [07 — CMS attribute schema](docs/07-cms-attribute-schema.md) | Builder schema (help_text, options, arrays) |
 | [08 — Template authoring](docs/08-template-authoring.md) | Marketplace, `proxima.website.json` |

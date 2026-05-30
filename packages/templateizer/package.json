@@ -26,8 +26,10 @@
     "publish:pkg": "pnpm publish --no-git-checks"
   },
   "dependencies": {
+    "@clack/prompts": "^1.4.0",
+    "@proxima-io/template-registry-client": "workspace:*",
     "@proxima-io/template-schema": "workspace:*",
-    "@proxima-io/template-registry-client": "workspace:*"
+    "picocolors": "^1.1.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
