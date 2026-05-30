@@ -1,8 +1,8 @@
 {
   "name": "@proxima-io/template-registry-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "HTTP client for the Proxima template registry API \u2014 create, update, publish, and inspect website templates.",
+  "description": "HTTP client for the Proxima template registry API — create, update, publish, and inspect website templates.",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
