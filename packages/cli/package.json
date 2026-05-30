@@ -1,0 +1,44 @@
+{
+  "name": "@proxima-io/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Global CLI for Proxima storefronts — discover workspaces, deploy manifests, publish templates.",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "proxima": "bin/proxima.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./workspace": {
+      "import": "./dist/workspace.js",
+      "types": "./dist/workspace.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rm -rf dist",
+    "publish:pkg": "pnpm publish --no-git-checks"
+  },
+  "dependencies": {
+    "@proxima-io/templateizer": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

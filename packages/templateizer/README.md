@@ -5,16 +5,20 @@ CLI para gestionar storefronts y templates de Proxima — deploy de section type
 ## Instalación
 
 ```bash
+# Recomendado — CLI global con discovery de monorepos
+npm install -g @proxima-io/cli
+
+# Engine directo (CI / scripts avanzados)
 pnpm add -D @proxima-io/templateizer
-# o globalmente
 npm install -g @proxima-io/templateizer
 ```
 
 ## Setup rápido
 
 ```bash
-# Wizard interactivo — crea .proxima/credentials.json y lo agrega al .gitignore
-proxima-templateizer init
+# Wizard interactivo — crea .proxima/credentials.json
+proxima init 214store
+# o: proxima-templateizer init
 ```
 
 El archivo de credenciales es la forma recomendada de autenticarse. Alternativa: variables de entorno o `.env`.
