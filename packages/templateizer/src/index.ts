@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { cancel, confirm, intro, isCancel, log, outro, password, text } from "@clack/prompts";
+import pc from "picocolors";
 import { TemplateRegistryClient, WebsiteDeployClient, WebsiteDeployClientError, type WebsiteTemplateRecord } from "@proxima-io/template-registry-client";
 import { parseTemplateManifest, validateTemplateManifest, validateWebsiteDeployManifest, type TemplateManifest, type WebsiteDeployManifest } from "@proxima-io/template-schema";
 
@@ -30,7 +32,6 @@ const commands = new Set([
 ]);
 
 // ─── CI / TTY detection ───────────────────────────────────────────────────────
-// Skip interactive prompts when running in CI or when stdin is not a terminal.
 
 const isCI = Boolean(
   process.env.CI ||
@@ -39,18 +40,22 @@ const isCI = Boolean(
   !process.stdin.isTTY,
 );
 
+// ─── Color helpers ────────────────────────────────────────────────────────────
+
+const sym = {
+  ok:        (msg: string) => `${pc.green("✓")} ${msg}`,
+  err:       (msg: string) => `${pc.red("✗")} ${msg}`,
+  warn:      (msg: string) => `${pc.yellow("⚠")} ${msg}`,
+  created:   (key: string, extra = "") => `  ${pc.green("+")} created    ${pc.cyan(key)}${extra}`,
+  updated:   (key: string) => `  ${pc.yellow("~")} updated    ${pc.cyan(key)}`,
+  unchanged: (keys: string) => `  ${pc.dim("·")} unchanged  ${pc.dim(keys)}`,
+  skipped:   (key: string, reason: string) => `  ${pc.dim("·")} skipped    ${key}  ${pc.dim(`(${reason})`)}`,
+  scaffolded:(key: string, sections: string) => `  ${pc.cyan("→")} scaffolded ${pc.cyan(key)} ${pc.dim(`[${sections}]`)}`,
+  bullet:    (msg: string) => `  ${pc.dim("·")} ${msg}`,
+  hint:      (msg: string) => `  ${pc.dim(msg)}`,
+};
+
 // ─── Credentials JSON support ─────────────────────────────────────────────────
-//
-// The CLI can read credentials from a JSON file instead of (or in addition to)
-// environment variables. The file is looked up in this order:
-//
-//   1. .proxima/credentials.json  (recommended — co-located with .proxima/ artifacts)
-//   2. proxima-credentials.json   (project root fallback)
-//
-// Resolution priority (highest → lowest):
-//   CLI flag > process.env > credentials JSON > .env file
-//
-// Add .proxima/credentials.json to .gitignore — `init` does this automatically.
 
 interface ProximaCredentials {
   api_url?: string;
@@ -66,7 +71,7 @@ function findCredentialsPath(targetPath: string, explicitPath?: string): string 
   if (explicitPath) {
     const resolved = path.resolve(process.cwd(), explicitPath);
     if (!existsSync(resolved)) {
-      console.error(`✗ Credentials file not found: ${resolved}`);
+      console.error(sym.err(`Credentials file not found: ${pc.cyan(resolved)}`));
       process.exit(1);
     }
     return resolved;
@@ -87,7 +92,7 @@ function loadCredentials(targetPath: string, explicitPath?: string): ProximaCred
   try {
     return readJson(credPath) as ProximaCredentials;
   } catch (err: unknown) {
-    console.error(`✗ Failed to read credentials file ${credPath}: ${(err as Error).message}`);
+    console.error(sym.err(`Failed to read credentials file ${pc.cyan(credPath)}: ${(err as Error).message}`));
     process.exit(1);
   }
 }
@@ -124,24 +129,24 @@ interface Spinner {
   stop(): void;
 }
 
-function createSpinner(text: string): Spinner {
+function createSpinner(initialText: string): Spinner {
   const isTTY = process.stderr.isTTY;
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let i = 0;
-  let current = text;
+  let current = initialText;
 
   if (!isTTY) {
-    process.stderr.write(`  ${text}...\n`);
+    process.stderr.write(`  ${initialText}...\n`);
     return {
       update: (t) => { current = t; process.stderr.write(`  ${t}...\n`); },
-      succeed: (t) => process.stderr.write(`✓ ${t}\n`),
-      fail:    (t) => process.stderr.write(`✗ ${t}\n`),
+      succeed: (t) => process.stderr.write(`${sym.ok(t)}\n`),
+      fail:    (t) => process.stderr.write(`${sym.err(t)}\n`),
       stop:    () => {},
     };
   }
 
   const interval = setInterval(() => {
-    process.stderr.write(`\r${frames[i % frames.length]} ${current}   `);
+    process.stderr.write(`\r${pc.cyan(frames[i % frames.length])} ${current}   `);
     i++;
   }, 80);
 
@@ -152,61 +157,37 @@ function createSpinner(text: string): Spinner {
 
   return {
     update: (t) => { current = t; },
-    succeed: (t) => { clear(); process.stderr.write(`✓ ${t}\n`); },
-    fail:    (t) => { clear(); process.stderr.write(`✗ ${t}\n`); },
+    succeed: (t) => { clear(); process.stderr.write(`${sym.ok(t)}\n`); },
+    fail:    (t) => { clear(); process.stderr.write(`${sym.err(t)}\n`); },
     stop:    () => { clear(); },
   };
 }
 
 // ─── Interactive prompts ──────────────────────────────────────────────────────
-//
-// All prompt functions are no-ops in CI / non-TTY environments, returning the
-// supplied default value so automated pipelines continue to work unchanged.
 
 async function promptText(question: string, defaultValue?: string): Promise<string> {
   if (isCI) return defaultValue ?? "";
-  const { createInterface } = await import("node:readline");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise<string>((resolve) => {
-    const hint = defaultValue ? ` (${defaultValue})` : "";
-    rl.question(`  ${question}${hint} › `, (answer) => {
-      rl.close();
-      resolve(answer.trim() || defaultValue || "");
-    });
+  const result = await text({
+    message: question,
+    placeholder: defaultValue,
+    defaultValue,
   });
+  if (isCancel(result)) { cancel("Setup cancelled."); process.exit(0); }
+  return (result as string) || defaultValue || "";
 }
 
 async function promptHidden(question: string): Promise<string> {
   if (isCI) return "";
-  const { createInterface } = await import("node:readline");
-  return new Promise<string>((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    process.stdout.write(`  ${question} › `);
-    // Mute echoed characters by swallowing write calls while readline reads.
-    type WriteFn = typeof process.stdout.write;
-    const origWrite = process.stdout.write.bind(process.stdout) as WriteFn;
-    (process.stdout as unknown as { write: WriteFn }).write = () => true;
-    rl.question("", (answer) => {
-      (process.stdout as unknown as { write: WriteFn }).write = origWrite;
-      process.stdout.write("\n");
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
+  const result = await password({ message: question });
+  if (isCancel(result)) { cancel("Setup cancelled."); process.exit(0); }
+  return result as string;
 }
 
 async function promptYesNo(question: string, defaultYes = true): Promise<boolean> {
   if (isCI) return defaultYes;
-  const { createInterface } = await import("node:readline");
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise<boolean>((resolve) => {
-    const hint = defaultYes ? "Y/n" : "y/N";
-    rl.question(`  ${question} (${hint}) › `, (answer) => {
-      rl.close();
-      const a = answer.trim().toLowerCase();
-      resolve(a ? a === "y" || a === "yes" : defaultYes);
-    });
-  });
+  const result = await confirm({ message: question, initialValue: defaultYes });
+  if (isCancel(result)) { cancel("Cancelled."); process.exit(0); }
+  return result as boolean;
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -258,48 +239,40 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     return templatePublishCommand(targetPath, argv.slice(2));
   }
   if (command === "preview") {
-    console.log("Run preview with: pnpm --filter @proxima-io/catalog-preview dev");
-    console.log(`Template target: ${targetPath}`);
+    console.log("Run preview with: " + pc.cyan("pnpm --filter @proxima-io/catalog-preview dev"));
+    console.log(`Template target: ${pc.dim(targetPath)}`);
     return 0;
   }
 
   const artifacts = buildArtifacts(targetPath, command);
   writeArtifacts(targetPath, artifacts);
-  console.log(`Templateizer ${command} complete. Artifacts written to ${artifactDir(targetPath)}`);
+  console.log(sym.ok(`Templateizer ${pc.bold(command)} complete. Artifacts written to ${pc.dim(artifactDir(targetPath))}`));
   return 0;
 }
 
 // ─── Init command ─────────────────────────────────────────────────────────────
-//
-// Interactive wizard that creates .proxima/credentials.json and adds it to
-// .gitignore. Reads existing .env values as defaults so you don't have to
-// re-type credentials you already have.
-//
-// Usage:
-//   proxima-templateizer init [target]
 
 async function initCommand(targetPath: string): Promise<number> {
   const dotenv = loadDotEnv(targetPath);
 
-  console.log("Proxima CLI — Project Setup\n");
-  console.log("Creates .proxima/credentials.json with your API credentials.");
-  console.log("This file is never committed (added to .gitignore automatically).\n");
+  intro(`${pc.bold("Proxima CLI")}  ${pc.dim("— Project Setup")}`);
+
+  log.info(`Creates ${pc.cyan(".proxima/credentials.json")} with your API credentials.`);
+  log.info(`This file is never committed (added to ${pc.cyan(".gitignore")} automatically).`);
 
   const existingCredPath = findCredentialsPath(targetPath);
   if (existingCredPath) {
     const rel = path.relative(process.cwd(), existingCredPath);
-    console.log(`  Found existing credentials: ${rel}`);
+    log.warn(`Found existing credentials: ${pc.cyan(rel)}`);
     const overwrite = await promptYesNo("Overwrite?", false);
     if (!overwrite) {
-      console.log("Aborted.");
+      cancel("Setup cancelled.");
       return 0;
     }
-    console.log();
   }
 
-  // Use existing env/dotenv values as pre-filled defaults.
-  const defaultApiUrl     = process.env.PROXIMA_API_URL     ?? dotenv.PROXIMA_API_URL     ?? "https://api.proxima.io";
-  const defaultDomain     = process.env.PROXIMA_DOMAIN      ?? dotenv.PROXIMA_DOMAIN      ?? dotenv.PROXIMA_WEBSITE_DOMAIN ?? "";
+  const defaultApiUrl      = process.env.PROXIMA_API_URL      ?? dotenv.PROXIMA_API_URL      ?? "https://api.proxima.io";
+  const defaultDomain      = process.env.PROXIMA_DOMAIN       ?? dotenv.PROXIMA_DOMAIN       ?? dotenv.PROXIMA_WEBSITE_DOMAIN ?? "";
   const defaultTemplateKey = process.env.PROXIMA_TEMPLATE_KEY ?? dotenv.PROXIMA_TEMPLATE_KEY ?? "";
 
   const apiUrl      = await promptText("API URL", defaultApiUrl);
@@ -308,11 +281,11 @@ async function initCommand(targetPath: string): Promise<number> {
   const templateKey = await promptText("Template key    (optional — leave blank if not needed)", defaultTemplateKey || undefined);
 
   if (!domain) {
-    console.error("\n✗ Domain is required.");
+    log.error("Domain is required.");
     return 1;
   }
   if (!serviceKey) {
-    console.error("\n✗ Service key is required.");
+    log.error("Service key is required.");
     return 1;
   }
 
@@ -325,13 +298,11 @@ async function initCommand(targetPath: string): Promise<number> {
     creds.template_key = templateKey.trim();
   }
 
-  // Write credentials file
   const credDir  = path.join(targetPath, ".proxima");
   const credPath = path.join(credDir, "credentials.json");
   mkdirSync(credDir, { recursive: true });
   writeFileSync(credPath, `${JSON.stringify(creds, null, 2)}\n`);
 
-  // Ensure .proxima/credentials.json is in .gitignore
   const gitignorePath  = path.join(targetPath, ".gitignore");
   const gitignoreEntry = ".proxima/credentials.json";
   let gitignoreUpdated = false;
@@ -347,12 +318,12 @@ async function initCommand(targetPath: string): Promise<number> {
   }
 
   const relCred = path.relative(process.cwd(), credPath);
-  console.log(`\n✓ Credentials saved to ${relCred}`);
+  log.success(`Credentials saved to ${pc.cyan(relCred)}`);
   if (gitignoreUpdated) {
-    console.log(`✓ Added ${gitignoreEntry} to .gitignore`);
+    log.success(`Added ${pc.cyan(gitignoreEntry)} to .gitignore`);
   }
-  console.log("\nReady! Try:");
-  console.log("  proxima-templateizer website-deploy --dry-run");
+
+  outro(`${pc.green("Ready!")}  Run: ${pc.cyan("proxima-templateizer website-deploy --dry-run")}`);
   return 0;
 }
 
@@ -379,7 +350,7 @@ export function buildArtifacts(targetPath: string, command: string) {
 export function validateTarget(targetPath: string): number {
   const manifests = collectManifestPaths(targetPath);
   if (!manifests.length) {
-    console.error(`No proxima.template.json files found under ${targetPath}`);
+    console.error(sym.err(`No proxima.template.json files found under ${pc.dim(targetPath)}`));
     return 1;
   }
 
@@ -389,12 +360,12 @@ export function validateTarget(targetPath: string): number {
     const result = validateTemplateManifest(value);
     if (!result.success) {
       failed = true;
-      console.error(`Invalid manifest: ${manifestPath}`);
+      console.error(sym.err(`Invalid manifest: ${pc.cyan(manifestPath)}`));
       for (const issue of result.error.issues) {
-        console.error(`  ${issue.path.join(".") || "(root)"}: ${issue.message}`);
+        console.error(sym.hint(`${issue.path.join(".") || "(root)"}: ${issue.message}`));
       }
     } else {
-      console.log(`✓ Valid manifest: ${manifestPath}`);
+      console.log(sym.ok(`Valid manifest: ${pc.cyan(manifestPath)}`));
     }
   }
   return failed ? 1 : 0;
@@ -737,10 +708,6 @@ function readFlag(argv: string[], name: string) {
 
 // ─── website-deploy command ───────────────────────────────────────────────────
 
-/**
- * Reads a .env file from the given directory and returns key=value pairs.
- * Values already in process.env take precedence (allows CI overrides).
- */
 function loadDotEnv(targetPath: string): Record<string, string> {
   const envPath = path.join(targetPath, ".env");
   const result: Record<string, string> = {};
@@ -767,8 +734,8 @@ function findWebsiteManifestPath(targetPath: string): string | null {
   const templateManifest = path.join(targetPath, "proxima.template.json");
   if (existsSync(templateManifest)) {
     console.warn(
-      "⚠  proxima.website.json not found. Falling back to proxima.template.json\n" +
-      "   Consider creating proxima.website.json for the website-deploy command.",
+      sym.warn("proxima.website.json not found. Falling back to proxima.template.json\n") +
+      sym.hint("Consider creating proxima.website.json for the website-deploy command."),
     );
     return templateManifest;
   }
@@ -794,9 +761,6 @@ function loadWebsiteManifest(targetPath: string): WebsiteDeployManifest {
   return result.data;
 }
 
-/**
- * Reads all values for a repeatable flag (e.g. --page /a --page /b → ["/a", "/b"]).
- */
 function readFlagAll(argv: string[], name: string): string[] {
   const results: string[] = [];
   for (let i = 0; i < argv.length - 1; i++) {
@@ -807,21 +771,6 @@ function readFlagAll(argv: string[], name: string): string[] {
   return results;
 }
 
-/**
- * Deploy section types + page scaffolding to a specific website.
- *
- * Credentials are resolved in this order (highest priority first):
- *   CLI flag  >  process.env  >  .proxima/credentials.json  >  .env
- *
- * Options:
- *   --dry-run           Print the payload without calling the API.
- *   --force             Apply breaking changes without prompting.
- *   --yes / -y          Skip the pre-deploy confirmation prompt.
- *   --page <path>       Deploy only this page (repeatable).
- *   --domain <domain>   Override PROXIMA_DOMAIN / credentials.domain.
- *   --service-key <k>   Override PROXIMA_SERVICE_KEY / credentials.service_key.
- *   --api-url <url>     Override PROXIMA_API_URL / credentials.api_url.
- */
 async function websiteDeployCommand(targetPath: string, argv: string[]): Promise<number> {
   const dotenv = loadDotEnv(targetPath);
   const creds  = loadCredentials(targetPath, readFlag(argv, "--credentials"));
@@ -834,32 +783,30 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
   const skipPrompt = argv.includes("--yes") || argv.includes("-y") || isCI;
   const pageFilter = readFlagAll(argv, "--page");
 
-  // Validate credentials up front with actionable error messages
   if (!apiUrl) {
-    console.error("✗ PROXIMA_API_URL is required.");
-    console.error("  Set it in .proxima/credentials.json or pass --api-url");
-    console.error("  Run: proxima-templateizer init");
+    console.error(sym.err("PROXIMA_API_URL is required."));
+    console.error(sym.hint("Set it in .proxima/credentials.json or pass --api-url"));
+    console.error(sym.hint(`Run: ${pc.cyan("proxima-templateizer init")}`));
     return 1;
   }
   if (!serviceKey) {
-    console.error("✗ PROXIMA_SERVICE_KEY is required.");
-    console.error("  Set it in .proxima/credentials.json or pass --service-key");
-    console.error("  Run: proxima-templateizer init");
+    console.error(sym.err("PROXIMA_SERVICE_KEY is required."));
+    console.error(sym.hint("Set it in .proxima/credentials.json or pass --service-key"));
+    console.error(sym.hint(`Run: ${pc.cyan("proxima-templateizer init")}`));
     return 1;
   }
   if (!domain) {
-    console.error("✗ PROXIMA_DOMAIN is required.");
-    console.error("  Set it in .proxima/credentials.json or pass --domain");
-    console.error("  Run: proxima-templateizer init");
+    console.error(sym.err("PROXIMA_DOMAIN is required."));
+    console.error(sym.hint("Set it in .proxima/credentials.json or pass --domain"));
+    console.error(sym.hint(`Run: ${pc.cyan("proxima-templateizer init")}`));
     return 1;
   }
 
-  // Load and validate manifest early — show clear errors before any API call
   let manifest: WebsiteDeployManifest;
   try {
     manifest = loadWebsiteManifest(targetPath);
   } catch (err: unknown) {
-    console.error(`✗ ${(err as Error).message}`);
+    console.error(sym.err((err as Error).message));
     return 1;
   }
 
@@ -879,8 +826,8 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
           return page["path"] ?? page["resolver_kind"];
         })
         .join(", ");
-      console.error(`✗ No pages matched filter: ${pageFilter.join(", ")}`);
-      console.error(`  Available: ${available}`);
+      console.error(sym.err(`No pages matched filter: ${pc.cyan(pageFilter.join(", "))}`));
+      console.error(sym.hint(`Available: ${available}`));
       return 1;
     }
     const matched = pagesToDeploy
@@ -889,13 +836,13 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
         return page["path"] ?? page["resolver_kind"];
       })
       .join(", ");
-    console.log(`Deploying ${pagesToDeploy.length} page(s): ${matched}\n`);
+    console.log(`Deploying ${pc.bold(String(pagesToDeploy.length))} page(s): ${pc.cyan(matched)}\n`);
   }
 
-  // Dry run — print payload and exit
+  // Dry run
   if (dryRun) {
-    console.log("Dry run — no API call made.\n");
-    console.log("Payload:");
+    console.log(pc.dim("Dry run — no API call made.\n"));
+    console.log(pc.bold("Payload:"));
     console.log(JSON.stringify({
       website_domain: domain,
       section_types: manifest.section_types,
@@ -905,10 +852,10 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
     return 0;
   }
 
-  // Pre-deploy summary + confirmation (skip with --yes, -y, or in CI)
+  // Pre-deploy confirmation
   if (!skipPrompt) {
-    console.log(`Deploy to: ${domain}`);
-    console.log(`  ${manifest.section_types.length} section type(s)  ·  ${pagesToDeploy.length} page(s)\n`);
+    console.log(`\nDeploy to: ${pc.bold(pc.cyan(domain))}`);
+    console.log(pc.dim(`  ${manifest.section_types.length} section type(s)  ·  ${pagesToDeploy.length} page(s)\n`));
     const confirmed = await promptYesNo("Continue?", true);
     if (!confirmed) {
       console.log("Aborted.");
@@ -921,18 +868,17 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
   try {
     client = new WebsiteDeployClient({ apiUrl, serviceKey });
   } catch (err: unknown) {
-    console.error(`✗ ${(err as Error).message}`);
+    console.error(sym.err((err as Error).message));
     return 1;
   }
 
   const start = Date.now();
-  const spinner = createSpinner(`Deploying to ${domain}`);
+  const spinner = createSpinner(`Deploying to ${pc.cyan(domain)}`);
 
   const doDeploy = (withForce: boolean) =>
     client.deploy(domain, { ...manifest, pages: pagesToDeploy }, { force: withForce });
 
   try {
-    // Attempt deploy; on 409 offer interactive --force instead of hard-failing
     const result = await doDeploy(force).catch(async (err: unknown) => {
       if (
         err instanceof WebsiteDeployClientError &&
@@ -940,59 +886,58 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
         err.breakingChanges?.length
       ) {
         spinner.stop();
-        console.error("✗ Breaking changes detected:\n");
+        console.error(`\n${sym.warn("Breaking changes detected:")}\n`);
         for (const bc of err.breakingChanges) {
-          console.error(`  Section type : ${bc.section_type}`);
-          console.error(`  Attribute    : ${bc.attribute}`);
-          console.error(`  Change       : ${bc.change} from '${bc.from}' to '${bc.to}'\n`);
+          console.error(`  ${pc.dim("Section type :")} ${pc.cyan(bc.section_type)}`);
+          console.error(`  ${pc.dim("Attribute    :")} ${bc.attribute}`);
+          console.error(`  ${pc.dim("Change       :")} ${bc.change} ${pc.dim("from")} ${pc.yellow(`'${bc.from}'`)} ${pc.dim("to")} ${pc.yellow(`'${bc.to}'`)}\n`);
         }
-        console.error("  Note: existing attribute content may be incompatible with the new type.\n");
+        console.error(sym.hint("Note: existing attribute content may be incompatible with the new type.\n"));
 
-        const applyForce = await promptYesNo(
-          "Apply breaking changes anyway?",
-          false,
-        );
+        const applyForce = await promptYesNo("Apply breaking changes anyway?", false);
         if (!applyForce) {
-          console.log("Aborted. Re-run with --force to apply breaking changes non-interactively.");
-          // Use a sentinel to avoid double-printing in the catch below
+          console.log(`Aborted. Re-run with ${pc.yellow("--force")} to apply breaking changes non-interactively.`);
           throw Object.assign(new Error("user_abort"), { handled: true });
         }
 
-        spinner.update(`Deploying with --force to ${domain}`);
+        spinner.update(`Deploying with ${pc.yellow("--force")} to ${pc.cyan(domain)}`);
         return doDeploy(true);
       }
       throw err;
     });
 
     const elapsed = ((Date.now() - start) / 1000).toFixed(1);
-    spinner.succeed(`Connected to ${result.website.domain} (website #${result.website.id})`);
+    spinner.succeed(`Connected to ${pc.cyan(result.website.domain)} ${pc.dim(`(website #${result.website.id})`)}`);
 
     // Section types summary
-    console.log("\nSection types");
-    for (const key of result.section_types.created)   console.log(`  + created    ${key}`);
-    for (const key of result.section_types.updated)   console.log(`  ~ updated    ${key}`);
+    console.log(`\n${pc.bold("Section types")}`);
+    for (const key of result.section_types.created)   console.log(sym.created(key));
+    for (const key of result.section_types.updated)   console.log(sym.updated(key));
     if (result.section_types.unchanged.length) {
-      console.log(`  · unchanged  ${result.section_types.unchanged.join(", ")}`);
+      console.log(sym.unchanged(result.section_types.unchanged.join(", ")));
     }
 
     // Pages summary
-    console.log("\nPages");
+    console.log(`\n${pc.bold("Pages")}`);
     for (const pageId of result.pages.created) {
       const scaffolded = result.pages.scaffolded[pageId];
-      const scaffoldStr = scaffolded?.length ? `  →  scaffolded [${scaffolded.join(", ")}]` : "";
-      console.log(`  + created    ${pageId}${scaffoldStr}`);
+      if (scaffolded?.length) {
+        console.log(sym.created(pageId, `  ${pc.cyan("→")}  scaffolded ${pc.dim(`[${scaffolded.join(", ")}]`)}`));
+      } else {
+        console.log(sym.created(pageId));
+      }
     }
     for (const [pageId, reason] of Object.entries(result.pages.skipped)) {
-      console.log(`  · skipped    ${pageId}  (${reason})`);
+      console.log(sym.skipped(pageId, reason));
     }
 
     // Warnings
     if (result.warnings.length) {
-      console.log("\n⚠ Warnings");
-      for (const warning of result.warnings) console.log(`  · ${warning}`);
+      console.log(`\n${pc.yellow("⚠ Warnings")}`);
+      for (const warning of result.warnings) console.log(sym.bullet(warning));
     }
 
-    console.log(`\n✓ Deploy completed in ${elapsed}s`);
+    console.log(`\n${sym.ok(`Deploy completed in ${pc.dim(elapsed + "s")}`)} `);
     return 0;
 
   } catch (err: unknown) {
@@ -1003,19 +948,19 @@ async function websiteDeployCommand(targetPath: string, argv: string[]): Promise
 
     if (err instanceof WebsiteDeployClientError) {
       if (err.status === 404) {
-        console.error(`✗ Website '${domain}' not found.`);
-        console.error("  Verify PROXIMA_DOMAIN matches a website configured in the Proxima admin.");
+        console.error(sym.err(`Website ${pc.cyan(`'${domain}'`)} not found.`));
+        console.error(sym.hint("Verify PROXIMA_DOMAIN matches a website configured in the Proxima admin."));
         return 1;
       }
       if (err.status === 403) {
-        console.error("✗ Access denied. The service key does not have access to this website.");
+        console.error(sym.err("Access denied. The service key does not have access to this website."));
         return 1;
       }
-      console.error(`✗ Deploy failed (${err.status ?? "network error"}): ${err.message}`);
-      if (err.responseText) console.error(`  ${err.responseText}`);
+      console.error(sym.err(`Deploy failed ${pc.dim(`(${err.status ?? "network error"})`)}: ${err.message}`));
+      if (err.responseText) console.error(sym.hint(err.responseText));
       return 1;
     }
-    console.error(`✗ Unexpected error: ${(err as Error).message}`);
+    console.error(sym.err(`Unexpected error: ${(err as Error).message}`));
     return 1;
   }
 }
@@ -1137,15 +1082,15 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
   const dryRun      = argv.includes("--dry-run");
 
   if (!apiUrl) {
-    console.error("✗ PROXIMA_API_URL is required (set in .proxima/credentials.json, .env, or pass --api-url)");
+    console.error(sym.err(`PROXIMA_API_URL is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --api-url)")}`));
     return 1;
   }
   if (!serviceKey) {
-    console.error("✗ PROXIMA_SERVICE_KEY is required (set in .proxima/credentials.json, .env, or pass --service-key)");
+    console.error(sym.err(`PROXIMA_SERVICE_KEY is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --service-key)")}`));
     return 1;
   }
   if (!templateKey) {
-    console.error("✗ PROXIMA_TEMPLATE_KEY is required (set in .proxima/credentials.json, .env, or pass --template-key)");
+    console.error(sym.err(`PROXIMA_TEMPLATE_KEY is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --template-key)")}`));
     return 1;
   }
 
@@ -1153,7 +1098,7 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
   try {
     manifest = loadWebsiteManifest(targetPath);
   } catch (err: unknown) {
-    console.error(`✗ ${(err as Error).message}`);
+    console.error(sym.err((err as Error).message));
     return 1;
   }
 
@@ -1161,37 +1106,20 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
   try {
     structure = buildTemplateStructure(manifest);
   } catch (err: unknown) {
-    console.error(`✗ ${(err as Error).message}`);
+    console.error(sym.err((err as Error).message));
     return 1;
   }
 
-  const metadata: Record<string, unknown> = {};
-  const metadataFields = [
-    "name", "short_description", "description", "demo_url",
-    "features", "pricing_tier", "color_palette", "tags",
-    "category", "industry", "preview_image",
-  ] as const;
-  for (const field of metadataFields) {
-    const value = (manifest as Record<string, unknown>)[field];
-    if (value !== undefined && value !== null) {
-      metadata[field] = value;
-    }
-  }
-
   if (dryRun) {
-    console.log("Dry run — no API call made.\n");
-    console.log("Template key:", templateKey);
+    console.log(pc.dim("Dry run — no API call made.\n"));
+    console.log(`Template key: ${pc.cyan(templateKey)}`);
     console.log("Structure:");
     console.log(JSON.stringify(structure, null, 2));
-    if (Object.keys(metadata).length > 0) {
-      console.log("\nMarketplace metadata:");
-      console.log(JSON.stringify(metadata, null, 2));
-    }
     return 0;
   }
 
   const start = Date.now();
-  const spinner = createSpinner(`Deploying template structure for ${templateKey}`);
+  const spinner = createSpinner(`Deploying template structure for ${pc.cyan(templateKey)}`);
   const url = `${apiUrl.replace(/\/$/, "")}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/structure`;
 
   let response: Response;
@@ -1202,19 +1130,19 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
         "content-type": "application/json",
         authorization: `Bearer ${serviceKey}`,
       },
-      body: JSON.stringify({ structure, ...metadata }),
+      body: JSON.stringify({ structure }),
     });
   } catch (err: unknown) {
     spinner.fail(`Network error: ${(err as Error).message}`);
     return 1;
   }
 
-  const text = await response.text();
+  const text2 = await response.text();
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
 
   if (response.status === 404) {
-    spinner.fail(`Template '${templateKey}' not found.`);
-    console.error("  Verify PROXIMA_TEMPLATE_KEY matches a template registered in the Proxima admin.");
+    spinner.fail(`Template ${pc.cyan(`'${templateKey}'`)} not found.`);
+    console.error(sym.hint("Verify PROXIMA_TEMPLATE_KEY matches a template registered in the Proxima admin."));
     return 1;
   }
   if (response.status === 403) {
@@ -1222,38 +1150,20 @@ async function templateDeployCommand(targetPath: string, argv: string[]): Promis
     return 1;
   }
   if (!response.ok) {
-    spinner.fail(`Deploy failed (${response.status}): ${text}`);
+    spinner.fail(`Deploy failed ${pc.dim(`(${response.status})`)}: ${text2}`);
     return 1;
   }
 
   const pageCount = structure.pages.length;
   const shellCount = structure.shell_sections.length;
   const placeholderCount = Object.keys(structure.smart_collection_placeholders).length;
-  const metadataCount = Object.keys(metadata).length;
 
-  spinner.succeed(`Template '${templateKey}' structure deployed in ${elapsed}s`);
-  console.log(`  Pages: ${pageCount}  |  Shell sections: ${shellCount}  |  Smart collection placeholders: ${placeholderCount}`);
-  if (metadataCount > 0) {
-    console.log(`  Marketplace metadata: ${Object.keys(metadata).join(", ")}`);
-  }
+  spinner.succeed(`Template ${pc.cyan(`'${templateKey}'`)} structure deployed ${pc.dim(elapsed + "s")}`);
+  console.log(sym.hint(`Pages: ${pageCount}  ·  Shell sections: ${shellCount}  ·  Smart collection placeholders: ${placeholderCount}`));
   return 0;
 }
 
 // ─── template-create command ──────────────────────────────────────────────────
-//
-// Idempotent create-or-update of a cms_website_templates row.
-//
-// Metadata is sourced from (priority order):
-//   1. CLI flags (--name, --description, --category, --pricing-tier, …)
-//   2. proxima.website.json → marketplace_metadata block
-//   3. proxima.website.json top-level fields (backward compat)
-//   4. Sensible defaults (pricing_tier=free, category=ecommerce, …)
-//
-// Credentials are resolved from (priority order):
-//   CLI flag > process.env > .proxima/credentials.json > .env file
-//
-// Pass --publish-manifest to also upload the structure to S3 and PATCH
-// the /manifest pointer on the API.
 
 async function templateCreateCommand(targetPath: string, argv: string[]): Promise<number> {
   const dotenv = loadDotEnv(targetPath);
@@ -1277,19 +1187,18 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const tagsOverride         = readFlag(argv, "--tags");
 
   if (!apiUrl) {
-    console.error("✗ PROXIMA_API_URL is required (set in .proxima/credentials.json, .env, or pass --api-url)");
+    console.error(sym.err(`PROXIMA_API_URL is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --api-url)")}`));
     return 1;
   }
   if (!serviceKey) {
-    console.error("✗ PROXIMA_SERVICE_KEY is required (set in .proxima/credentials.json, .env, or pass --service-key)");
+    console.error(sym.err(`PROXIMA_SERVICE_KEY is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --service-key)")}`));
     return 1;
   }
   if (!templateKey) {
-    console.error("✗ PROXIMA_TEMPLATE_KEY is required (set in .proxima/credentials.json, .env, or pass --template-key)");
+    console.error(sym.err(`PROXIMA_TEMPLATE_KEY is required ${pc.dim("(set in .proxima/credentials.json, .env, or pass --template-key)")}`));
     return 1;
   }
 
-  // Read raw JSON before schema validation (which strips unknown fields like marketplace_metadata).
   let rawManifest: Record<string, unknown> = {};
   let manifest: ReturnType<typeof loadWebsiteManifest> | null = null;
   const manifestPath = findWebsiteManifestPath(targetPath);
@@ -1298,7 +1207,7 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
       rawManifest = readJson(manifestPath) as Record<string, unknown>;
       manifest = loadWebsiteManifest(targetPath);
     } catch (err: unknown) {
-      console.error(`✗ ${(err as Error).message}`);
+      console.error(sym.err((err as Error).message));
       return 1;
     }
   }
@@ -1354,13 +1263,13 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   let structure: TemplateStructure | null = null;
   if (publishManifest) {
     if (!manifest) {
-      console.error("✗ proxima.website.json not found — required for --publish-manifest");
+      console.error(sym.err(`proxima.website.json not found — required for ${pc.yellow("--publish-manifest")}`));
       return 1;
     }
     try {
       structure = buildTemplateStructure(manifest);
     } catch (err: unknown) {
-      console.error(`✗ ${(err as Error).message}`);
+      console.error(sym.err((err as Error).message));
       return 1;
     }
   }
@@ -1369,13 +1278,13 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const useLocalMode = localOnly || !s3Bucket;
 
   if (dryRun) {
-    console.log("Dry run — no API call made.\n");
-    console.log(`Template key: ${templateKey}`);
+    console.log(pc.dim("Dry run — no API call made.\n"));
+    console.log(`Template key: ${pc.cyan(templateKey)}`);
     console.log("Action: POST (create) or PATCH (update) — determined at runtime by GET check");
     console.log("\nPayload:");
     console.log(JSON.stringify(payload, null, 2));
     if (publishManifest && structure) {
-      console.log(`\nManifest mode: ${useLocalMode ? `local (TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey})` : `S3 s3://${s3Bucket}/${manifestKey} (region=${s3Region ?? "default"})`}`);
+      console.log(`\nManifest mode: ${useLocalMode ? pc.dim(`local (TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey})`) : `S3 ${pc.cyan(`s3://${s3Bucket}/${manifestKey}`)} ${pc.dim(`(region=${s3Region ?? "default"})`)}`}`);
       console.log("\nStructure:");
       console.log(JSON.stringify(structure, null, 2));
     }
@@ -1384,9 +1293,8 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
 
   const start = Date.now();
   const baseUrl = apiUrl.replace(/\/$/, "");
-  const spinner = createSpinner(`Checking template '${templateKey}'`);
+  const spinner = createSpinner(`Checking template ${pc.cyan(`'${templateKey}'`)}`);
 
-  // Step 1 — check if the template already exists
   let existingId: string | null = null;
   try {
     const checkRes = await fetchWithRetry(
@@ -1404,8 +1312,8 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
       spinner.fail("Access denied. The service key does not have cms:templates:write scope.");
       return 1;
     } else if (checkRes.status !== 404) {
-      const text = await checkRes.text();
-      spinner.fail(`Failed to check template existence (${checkRes.status}): ${text}`);
+      const text2 = await checkRes.text();
+      spinner.fail(`Failed to check template existence ${pc.dim(`(${checkRes.status})`)}: ${text2}`);
       return 1;
     }
   } catch (err: unknown) {
@@ -1413,9 +1321,8 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
     return 1;
   }
 
-  // Step 2 — create or update the template row
   const action = existingId ? "updated" : "created";
-  spinner.update(existingId ? `Updating template '${templateKey}'` : `Creating template '${templateKey}'`);
+  spinner.update(existingId ? `Updating template ${pc.cyan(`'${templateKey}'`)}` : `Creating template ${pc.cyan(`'${templateKey}'`)}`);
 
   let rowResponse: Response;
   try {
@@ -1443,7 +1350,7 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
     return 1;
   }
   if (!rowResponse.ok) {
-    spinner.fail(`Template ${action} failed (${rowResponse.status}): ${rowText}`);
+    spinner.fail(`Template ${action} failed ${pc.dim(`(${rowResponse.status})`)}: ${rowText}`);
     return 1;
   }
 
@@ -1451,7 +1358,7 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   try { createdRow = JSON.parse(rowText) as Record<string, unknown>; } catch { /* ignore */ }
 
   const elapsed1 = ((Date.now() - start) / 1000).toFixed(1);
-  spinner.succeed(`Template '${templateKey}' ${action} (id=${createdRow.id ?? "?"}) in ${elapsed1}s`);
+  spinner.succeed(`Template ${pc.cyan(`'${templateKey}'`)} ${action} ${pc.dim(`(id=${createdRow.id ?? "?"})`)} ${pc.dim(elapsed1 + "s")}`);
 
   if (!publishManifest || !structure) {
     return 0;
@@ -1468,18 +1375,18 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
         region: s3Region,
         body: JSON.stringify(structure),
       });
-      spinner2.succeed(`Uploaded ${manifestKey} to s3://${s3Bucket} (VersionId=${manifestVersionId})`);
+      spinner2.succeed(`Uploaded ${pc.cyan(manifestKey)} to ${pc.cyan(`s3://${s3Bucket}`)} ${pc.dim(`(VersionId=${manifestVersionId})`)}`);
     } catch (err: unknown) {
       spinner2.fail(`S3 upload failed: ${(err as Error).message}`);
-      console.error("  Check AWS credentials and that the 'aws' CLI is installed and on PATH.");
+      console.error(sym.hint("Check AWS credentials and that the 'aws' CLI is installed and on PATH."));
       return 1;
     }
   } else {
     spinner2.stop();
-    console.log(`  Local mode — skipped S3 upload. API reads from TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey}`);
+    console.log(sym.hint(`Local mode — skipped S3 upload. API reads from ${pc.dim(`TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey}`)}`));
   }
 
-  // Step 4 — PATCH /manifest on the API with the S3 pointer
+  // Step 4 — PATCH /manifest on the API
   const spinner3 = createSpinner("Publishing manifest pointer");
   const manifestUrl = `${baseUrl}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/manifest`;
   let manifestResponse: Response;
@@ -1501,7 +1408,7 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const elapsed2 = ((Date.now() - start) / 1000).toFixed(1);
 
   if (manifestResponse.status === 404) {
-    spinner3.fail(`Template '${templateKey}' not found when patching manifest (unexpected after create/update).`);
+    spinner3.fail(`Template ${pc.cyan(`'${templateKey}'`)} not found when patching manifest (unexpected after create/update).`);
     return 1;
   }
   if (manifestResponse.status === 403) {
@@ -1509,7 +1416,7 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
     return 1;
   }
   if (!manifestResponse.ok) {
-    spinner3.fail(`Manifest deploy failed (${manifestResponse.status}): ${manifestText}`);
+    spinner3.fail(`Manifest deploy failed ${pc.dim(`(${manifestResponse.status})`)}: ${manifestText}`);
     return 1;
   }
 
@@ -1517,13 +1424,13 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const shellCount = structure.shell_sections.length;
   const placeholderCount = Object.keys(structure.smart_collection_placeholders).length;
 
-  spinner3.succeed(`Manifest published in ${elapsed2}s`);
-  console.log(`  Pages: ${pageCount}  |  Shell sections: ${shellCount}  |  Smart collection placeholders: ${placeholderCount}`);
+  spinner3.succeed(`Manifest published ${pc.dim(elapsed2 + "s")}`);
+  console.log(sym.hint(`Pages: ${pageCount}  ·  Shell sections: ${shellCount}  ·  Smart collection placeholders: ${placeholderCount}`));
   if (manifestVersionId) {
-    console.log(`  Manifest:  s3://${s3Bucket}/${manifestKey}`);
-    console.log(`  VersionId: ${manifestVersionId}`);
+    console.log(sym.hint(`Manifest:  ${pc.cyan(`s3://${s3Bucket}/${manifestKey}`)}`));
+    console.log(sym.hint(`VersionId: ${pc.dim(manifestVersionId)}`));
   } else {
-    console.log(`  Manifest:  (local) ${manifestKey}`);
+    console.log(sym.hint(`Manifest:  ${pc.dim(`(local) ${manifestKey}`)}`));
   }
   return 0;
 }
@@ -1538,9 +1445,6 @@ async function templatePublishCommand(targetPath: string, argv: string[]): Promi
 
 // ─── Network helpers ──────────────────────────────────────────────────────────
 
-/**
- * Fetch with simple exponential-backoff retry on 5xx errors (3 attempts).
- */
 async function fetchWithRetry(url: string, init: RequestInit = {}, attempts = 3): Promise<Response> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
@@ -1557,10 +1461,6 @@ async function fetchWithRetry(url: string, init: RequestInit = {}, attempts = 3)
   throw lastError ?? new Error("fetch failed after retries");
 }
 
-/**
- * Shell out to `aws s3api put-object` to upload a manifest. Avoids pulling the
- * AWS SDK as a dependency — the AWS CLI is universally available on CI runners.
- */
 async function uploadManifestToS3(args: {
   bucket: string;
   key: string;
@@ -1608,110 +1508,106 @@ async function uploadManifestToS3(args: {
 
 function printHelp(unknownCommand?: string) {
   if (unknownCommand) {
-    console.error(`Unknown command: ${unknownCommand}\n`);
+    console.error(`${sym.err(`Unknown command: ${pc.bold(unknownCommand)}`)}\n`);
   }
-  console.log(`Usage: proxima-templateizer <command> [target] [options]
 
-SETUP
-  init              Interactive setup wizard — creates .proxima/credentials.json
+  const b  = (s: string) => pc.bold(s);
+  const c  = (s: string) => pc.cyan(s);
+  const y  = (s: string) => pc.yellow(s);
+  const d  = (s: string) => pc.dim(s);
+
+  console.log(`
+${b("Usage:")} ${c("proxima-templateizer")} <command> [target] [options]
+
+${b("SETUP")}
+  ${c("init")}              Interactive setup wizard — creates ${d(".proxima/credentials.json")}
                     and adds it to .gitignore. Use instead of managing .env manually.
 
-WEBSITE DEPLOY
-  website-deploy    Deploy section types + page scaffolding to a specific website.
+${b("WEBSITE DEPLOY")}
+  ${c("website-deploy")}    Deploy section types + page scaffolding to a specific website.
 
-    Options:
-      --dry-run                  Print the payload without calling the API.
-      --force                    Apply breaking changes without prompting.
-      --yes, -y                  Skip the pre-deploy confirmation prompt (useful in CI).
-      --page <path>              Deploy only this page (repeatable: --page /a --page /b).
+    ${d("Options:")}
+      ${y("--dry-run")}                  Print the payload without calling the API.
+      ${y("--force")}                    Apply breaking changes without prompting.
+      ${y("--yes")}, ${y("-y")}                  Skip the pre-deploy confirmation prompt (useful in CI).
+      ${y("--page")} <path>              Deploy only this page (repeatable: ${d("--page /a --page /b")}).
                                  Matches against page path or resolver_kind.
-      --domain <domain>          Override PROXIMA_DOMAIN.
-      --service-key <k>          Override PROXIMA_SERVICE_KEY.
-      --api-url <url>            Override PROXIMA_API_URL.
-      --credentials <file.json>  Path to a credentials JSON file.
+      ${y("--domain")} <domain>          Override PROXIMA_DOMAIN.
+      ${y("--service-key")} <k>          Override PROXIMA_SERVICE_KEY.
+      ${y("--api-url")} <url>            Override PROXIMA_API_URL.
+      ${y("--credentials")} <file.json>  Path to a credentials JSON file.
 
-    Credentials (highest → lowest priority):
-      CLI flags  >  process.env  >  --credentials / .proxima/credentials.json  >  .env
+    ${d("Credentials (highest → lowest priority):")}
+      ${d("CLI flags  >  process.env  >  --credentials / .proxima/credentials.json  >  .env")}
 
-TEMPLATE COMMANDS
-  validate          Validate one template or template tree (proxima.template.json).
-  register          Create or update a draft WebsiteTemplate in proxima-api.
-  deploy            Patch deployment_config for a registered template.
-  publish           Mark a registered template as published.
-  sync              validate → register → [deploy] → [publish].
-  status            Show admin registry state and storefront visibility.
+${b("TEMPLATE COMMANDS")}
+  ${c("validate")}          Validate one template or template tree ${d("(proxima.template.json)")}.
+  ${c("register")}          Create or update a draft WebsiteTemplate in proxima-api.
+  ${c("deploy")}            Patch deployment_config for a registered template.
+  ${c("publish")}           Mark a registered template as published.
+  ${c("sync")}              validate → register → [deploy] → [publish].
+  ${c("status")}            Show admin registry state and storefront visibility.
 
-    Options (register / deploy / publish / sync / status):
-      --dry-run         Print planned action without calling the API.
-      --api-url <url>   Override PROXIMA_API_URL.
-      --token <token>   Override PROXIMA_API_TOKEN.
-      --publish         Also publish during sync.
+    ${d("Options (register / deploy / publish / sync / status):")}
+      ${y("--dry-run")}         Print planned action without calling the API.
+      ${y("--api-url")} <url>   Override PROXIMA_API_URL.
+      ${y("--token")} <token>   Override PROXIMA_API_TOKEN.
+      ${y("--publish")}         Also publish during sync.
 
-  template-deploy   [LEGACY] Push inline structure to the template DB column.
+  ${c("template-deploy")}   ${d("[LEGACY]")} Push inline structure to the template DB column.
+  ${c("template-create")}   Idempotent create-or-update of a template row in the API.
 
-    Options:
-      --dry-run                  Print structure JSON without calling the API.
-      --template-key <k>         Override PROXIMA_TEMPLATE_KEY.
-      --service-key <k>          Override PROXIMA_SERVICE_KEY.
-      --api-url <url>            Override PROXIMA_API_URL.
-      --credentials <file.json>  Path to a credentials JSON file.
+    ${d("Options:")}
+      ${y("--dry-run")}             Print planned payload without calling the API.
+      ${y("--publish-manifest")}    Upload structure to S3 and PATCH the manifest pointer.
+      ${y("--local-only")}          Skip S3 upload ${d("(API reads from TEMPLATES_LOCAL_FALLBACK_DIR)")}.
+      ${y("--s3-bucket")} <bucket>  Override S3_TEMPLATES_BUCKET.
+      ${y("--s3-region")} <region>  Override S3_TEMPLATES_REGION ${d("(defaults to AWS_REGION)")}.
+      ${y("--template-key")} <k>    Override PROXIMA_TEMPLATE_KEY.
+      ${y("--service-key")} <k>     Override PROXIMA_SERVICE_KEY.
+      ${y("--api-url")} <url>       Override PROXIMA_API_URL.
+      ${y("--name")} <string>       Template display name.
+      ${y("--description")} <str>   Short description shown in the marketplace.
+      ${y("--category")} <str>      Category ${d("(default: ecommerce)")}.
+      ${y("--pricing-tier")} <str>  Pricing tier: ${d("free | pro")}  ${d("(default: free)")}.
+      ${y("--demo-url")} <url>      Live demo URL.
+      ${y("--preview-image")} <url> Hero preview image URL.
+      ${y("--tags")} <a,b,c>        Comma-separated tags.
 
-  template-create   Idempotent create-or-update of a template row in the API.
+  ${c("template-publish")}  Alias for ${d("template-create --publish-manifest")} ${d("(backward compat)")}.
 
-    Options:
-      --dry-run             Print planned payload without calling the API.
-      --publish-manifest    Also upload structure to S3 and PATCH the manifest pointer.
-      --local-only          Skip S3 upload (API reads from TEMPLATES_LOCAL_FALLBACK_DIR).
-      --s3-bucket <bucket>  Override S3_TEMPLATES_BUCKET.
-      --s3-region <region>  Override S3_TEMPLATES_REGION (defaults to AWS_REGION).
-      --template-key <k>    Override PROXIMA_TEMPLATE_KEY.
-      --service-key <k>     Override PROXIMA_SERVICE_KEY.
-      --api-url <url>       Override PROXIMA_API_URL.
-      --name <string>       Template display name.
-      --description <str>   Short description shown in the marketplace.
-      --category <str>      Category (default: ecommerce).
-      --pricing-tier <str>  Pricing tier: free | pro  (default: free).
-      --demo-url <url>      Live demo URL (default: https://<template-key>.proxima.pe).
-      --preview-image <url>      Hero preview image URL.
-      --tags <a,b,c>             Comma-separated tags.
-      --credentials <file.json>  Path to a credentials JSON file.
+${b("ARTIFACT GENERATION")} ${d("(no API calls)")}
+  ${c("scan")}              Detect pages and source files.
+  ${c("snapshot")}          Create auditable snapshot artifacts.
+  ${c("analyze")}           Infer pages, sections, attributes, collections.
+  ${c("infer-schema")}      Emit attribute schema artifacts from manifest.
+  ${c("infer-collections")} Emit Smart Collection placeholder artifacts.
+  ${c("codemod")}           Prepare codemod audit artifacts.
+  ${c("preview")}           Print local preview instructions.
 
-    Metadata priority: CLI flags > marketplace_metadata block > top-level fields > defaults.
+${b("CREDENTIALS FILE")}
+  ${d(".proxima/credentials.json")} (or ${d("proxima-credentials.json")} at project root):
 
-  template-publish  Alias for template-create --publish-manifest (backward compat).
+  ${d(`{
+    "api_url":      "https://api.proxima.io",
+    "service_key":  "pxa_live_...",
+    "domain":       "mystore.proxima.app",
+    "template_key": "my-template"   // optional
+  }`)}
 
-ARTIFACT GENERATION (no API calls)
-  scan              Detect pages and source files.
-  snapshot          Create auditable snapshot artifacts.
-  analyze           Infer pages, sections, attributes, collections.
-  infer-schema      Emit attribute schema artifacts from manifest.
-  infer-collections Emit Smart Collection placeholder artifacts.
-  codemod           Prepare codemod audit artifacts.
-  preview           Print local preview instructions.
-
-CREDENTIALS FILE
-  .proxima/credentials.json (or proxima-credentials.json at project root):
-
-    {
-      "api_url":     "https://api.proxima.io",
-      "service_key": "pxa_live_...",
-      "domain":      "mystore.proxima.app",
-      "template_key": "my-template"   // optional
-    }
-
-  Run \`proxima-templateizer init\` to create this file interactively.
+  Run ${c("proxima-templateizer init")} to create this file interactively.
   Never commit it — init adds it to .gitignore automatically.
 
-ENV VARS (alternative to credentials file)
-  PROXIMA_API_URL        API base URL
-  PROXIMA_SERVICE_KEY    Bearer token (cms:websites:write scope)
-  PROXIMA_DOMAIN         Website domain
-  PROXIMA_TEMPLATE_KEY   Template key (template commands only)
-  PROXIMA_API_TOKEN      Token for template registry commands
-  S3_TEMPLATES_BUCKET    S3 bucket for manifest uploads
-  S3_TEMPLATES_REGION    S3 region (defaults to AWS_REGION)
+${b("ENV VARS")} ${d("(alternative to credentials file)")}
+  ${y("PROXIMA_API_URL")}        API base URL
+  ${y("PROXIMA_SERVICE_KEY")}    Bearer token ${d("(cms:websites:write scope)")}
+  ${y("PROXIMA_DOMAIN")}         Website domain
+  ${y("PROXIMA_TEMPLATE_KEY")}   Template key ${d("(template commands only)")}
+  ${y("PROXIMA_API_TOKEN")}      Token for template registry commands
+  ${y("S3_TEMPLATES_BUCKET")}    S3 bucket for manifest uploads
+  ${y("S3_TEMPLATES_REGION")}    S3 region ${d("(defaults to AWS_REGION)")}
 
-  Set NO_INTERACTIVE=1 (or CI=1) to disable all interactive prompts.
+  ${d("Set NO_INTERACTIVE=1 (or CI=1) to disable all interactive prompts.")}
 `);
 }
 
