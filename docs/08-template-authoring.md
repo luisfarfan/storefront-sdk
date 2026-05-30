@@ -14,77 +14,95 @@ Un template empaqueta:
 - El **código del storefront** que renderiza todo lo anterior
 
 ```
-proxima.template.json  ← manifiesto del template
+proxima.website.json   ← manifiesto (deploy + marketplace structure)
 src/                   ← código Astro del storefront
-  sections/            ← los componentes de sección
-  components/
-  layouts/
-  pages/
+  components/sections/ ← componentes de sección
+  layouts/             ← SiteLayout (shell global)
+  pages/               ← catch-all + API routes
 ```
+
+> **Nota:** el nombre canónico del manifiesto es **`proxima.website.json`**. Sirve tanto para
+> `proxima deploy` (website de un cliente) como para empaquetar la estructura del template en el
+> marketplace. No repitas header/footer en cada página — van en `shell_sections`.
 
 ---
 
-## `proxima.template.json` — El manifiesto
+## `proxima.website.json` — El manifiesto
 
 ```json
 {
   "schema_version": "1.0",
-  "key": "mi-tienda",
-  "label": "Mi Tienda",
-  "description": "Storefront moderno para tiendas de moda.",
-  "version": "1.0.0",
-  "category": "fashion",
-  "preview_url": "https://mi-tienda-preview.proxima.app",
+  "section_types": [ "... ver abajo ..." ],
   "pages": [
     {
       "path": "/",
       "resolver_kind": "content_page",
       "label": "Home",
-      "sections": [
-        { "type": "header", "order": 1 },
-        { "type": "hero",   "order": 2 },
-        { "type": "product_grid", "order": 3, "label": "Destacados" },
-        { "type": "footer", "order": 99 }
+      "scaffold_sections": [
+        {
+          "section_type": "hero_bento",
+          "order": 1,
+          "default_values": { "hero_products": "auto:featured_products" }
+        },
+        { "section_type": "product_grid", "order": 2 }
       ]
     },
     {
       "path": "/producto/{slug}",
       "resolver_kind": "product_detail",
       "label": "Detalle de producto",
-      "sections": [
-        { "type": "header", "order": 1 },
-        { "type": "product_detail", "order": 2 },
-        { "type": "related_products", "order": 3 },
-        { "type": "footer", "order": 99 }
-      ]
+      "scaffold_sections": []
     },
     {
       "path": "/categoria/{slug}",
       "resolver_kind": "category_detail",
       "label": "Categoría",
-      "sections": [
-        { "type": "header", "order": 1 },
-        { "type": "category_hero", "order": 2 },
-        { "type": "product_grid", "order": 3 },
-        { "type": "footer", "order": 99 }
+      "scaffold_sections": [
+        { "section_type": "product_grid", "order": 1 }
       ]
     },
     {
       "path": "/buscar",
-      "resolver_kind": "search",
+      "resolver_kind": "buyer_search",
       "label": "Búsqueda",
-      "sections": [
-        { "type": "header", "order": 1 },
-        { "type": "search", "order": 2 },
-        { "type": "footer", "order": 99 }
-      ]
+      "scaffold_sections": []
     }
   ],
+  "shell_sections": [
+    { "key": "header", "section_type": "header", "order": 1 },
+    { "key": "mega_menu", "section_type": "mega_menu", "order": 2 },
+    { "key": "footer", "section_type": "footer", "order": 3 }
+  ],
+  "smart_collection_placeholders": {
+    "featured_products": {
+      "name": "Productos Destacados",
+      "type": "product_list",
+      "config": { "filter": "featured" },
+      "cache_ttl": 300
+    }
+  },
+  "shell_default_values": {
+    "header": { "logo": { "text": "Mi Tienda", "href": "/" } }
+  },
+  "marketplace_metadata": {
+    "key": "mi-tienda",
+    "label": "Mi Tienda",
+    "description": "Storefront moderno para tiendas de moda.",
+    "version": "1.0.0",
+    "category": "fashion",
+    "preview_url": "https://mi-tienda-preview.proxima.app"
+  }
+}
+```
+
+Fragmento de `section_types` (el array completo vive en el manifiesto real):
+
+```json
   "section_types": [
     {
       "key": "header",
       "label": "Header",
-      "category": "navigation",
+      "category": "shell",
       "attribute_schema": [
         { "name": "logo",      "label": "Logo",       "type": "image",   "order": 1 },
         { "name": "nav_links", "label": "Navegación", "type": "array",   "order": 2,
@@ -120,7 +138,7 @@ src/                   ← código Astro del storefront
     {
       "key": "footer",
       "label": "Footer",
-      "category": "navigation",
+      "category": "shell",
       "attribute_schema": [
         { "name": "copyright", "label": "Copyright", "type": "text",  "order": 1 },
         { "name": "links",     "label": "Links",     "type": "array", "order": 2,
@@ -129,7 +147,6 @@ src/                   ← código Astro del storefront
       ]
     }
   ]
-}
 ```
 
 ---
@@ -154,55 +171,39 @@ esos los defines tú.
 
 ---
 
-## La CLI `templateizer`
+## CLI — `@proxima-io/cli` (`proxima`)
 
 ```bash
-# Instalar globalmente o como devDependency
-pnpm add -D @proxima-io/templateizer
-
-# O usar directamente
-pnpm exec templateizer <comando>
+npm install -g @proxima-io/cli
+# o en monorepo: npm run proxima -- <comando>
 ```
 
-### Comandos
+### Comandos relevantes para templates
 
 ```bash
-# Validar el manifiesto localmente
-templateizer validate
+# Validar manifiesto
+proxima validate mi-tienda
 
-# Registrar el template en el tenant (primera vez)
-templateizer register --key mi-tienda
+# Deploy schemas + páginas a un website de staging
+proxima deploy mi-tienda
 
-# Subir nueva versión del template
-templateizer deploy --version 1.1.0
+# Registrar template en marketplace (primera vez)
+proxima template:create mi-tienda
 
-# Publicar en el marketplace (requiere aprobación de Proxima)
-templateizer publish
-
-# Sincronizar section types con el admin sin versionar
-templateizer sync
+# Publicar versión
+proxima template:publish mi-tienda
 ```
 
-### Flujo típico de desarrollo
+El engine subyacente es `@proxima-io/templateizer`; la CLI descubre apps por `proxima.website.json`.
+
+### Flujo típico
 
 ```bash
-# 1. Crear el manifiesto
-templateizer init
-
-# 2. Iterar: editar código + schema → validar
-templateizer validate
-
-# 3. Registrar en el tenant de staging
-templateizer register --env staging
-
-# 4. Instalar el template en un website de staging para probar
-# (desde el admin de Proxima)
-
-# 5. Cuando listo, deployar versión final
-templateizer deploy --version 1.0.0
-
-# 6. Publicar en marketplace
-templateizer publish
+proxima init mi-tienda          # credenciales
+proxima validate mi-tienda      # iterar schema + código
+proxima deploy mi-tienda        # probar en website staging
+proxima template:create mi-tienda
+proxima template:publish mi-tienda
 ```
 
 ---
@@ -211,9 +212,9 @@ templateizer publish
 
 | Categoría | Tipos de sección típicos |
 |-----------|--------------------------|
-| `navigation` | header, footer, breadcrumb |
-| `content` | hero, banner, rich_text_block, faq, testimonials |
-| `commerce` | product_grid, product_detail, category_hero, cart_summary |
+| `shell` | header, mega_menu, footer — **global**, no en `scaffold_sections` de páginas |
+| `content` | hero_bento, cta_banner, faq, testimonials |
+| `commerce` | product_grid, category_showcase, commerce_view |
 | `social` | instagram_feed, review_widget |
 | `utility` | spacer, divider, custom_html |
 
@@ -221,26 +222,15 @@ templateizer publish
 
 ## Sample data para el preview
 
-El marketplace muestra un preview con datos de muestra.
-Configura los datos en `proxima.template.json`:
+El preview del marketplace usa el storefront en modo **fixtures** (`PROXIMA_TEMPLATE_DEMO_DOMAIN`)
+con JSON en `src/fixtures/` (website, composition, shell, catálogo).
 
-```json
-{
-  "sample_data": {
-    "sections": {
-      "hero": {
-        "image": "https://cdn.proxima.io/templates/mi-tienda/hero.jpg",
-        "headline": "Nueva Colección Verano",
-        "subheadline": "Descubre los últimos estilos",
-        "cta": { "url": "/productos", "label": "Ver colección" }
-      },
-      "product_grid": {
-        "headline": "Productos Destacados"
-      }
-    }
-  }
-}
-```
+Para valores iniciales al instanciar el template:
+- `scaffold_sections[].default_values` — contenido de páginas nuevas
+- `shell_default_values` — header, mega_menu, footer
+- `smart_collection_placeholders` + `"auto:featured_products"` — colecciones al detectar catálogo
+
+Ver golden template: `apps/214store/proxima.website.json` y `src/fixtures/`.
 
 ---
 
@@ -315,7 +305,7 @@ Legado: `"config": { "options": ["primary", "secondary"] }` en `type: "text"` si
 
 Requisitos para publicar:
 
-1. `templateizer validate` sin errores
+1. `proxima validate` sin errores
 2. Preview URL funcionando y accesible
 3. Al menos 4 section types implementados
 4. Sample data configurado para el preview
@@ -323,10 +313,10 @@ Requisitos para publicar:
 
 ```bash
 # Verificar que todo esté en orden
-templateizer validate --strict
+proxima validate mi-tienda
 
 # Enviar para revisión
-templateizer publish
+proxima template:publish mi-tienda
 # → El equipo de Proxima revisa en 2-5 días hábiles
 # → Recibes notificación por email
 ```
@@ -353,10 +343,10 @@ No necesitas hacer nada extra en el código Astro — la API ya resuelve el loca
 
 ## Checklist para publicar un template
 
-- [ ] `proxima.template.json` válido (`templateizer validate`)
-- [ ] Todos los `section_types` listados tienen su componente Astro en `src/sections/`
-- [ ] Todos los componentes están en el `SECTION_MAP`
-- [ ] Sample data configurado para el preview del marketplace
+- [ ] `proxima.website.json` válido (`proxima validate`)
+- [ ] Todos los `section_types` tienen componente en `src/components/sections/` y entrada en `SECTION_REGISTRY`
+- [ ] `shell_sections` declarado; header/footer **no** duplicados en cada página
+- [ ] Fixtures de preview (`src/fixtures/`) alineados con el manifiesto
 - [ ] Preview URL desplegada y accesible públicamente
 - [ ] `.env.example` con las variables necesarias
 - [ ] `README.md` con instrucciones para el developer que instale el template

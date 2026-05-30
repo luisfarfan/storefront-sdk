@@ -2,6 +2,12 @@ import { run as templateizerRun } from "@proxima-io/templateizer";
 import { createInterface } from "node:readline";
 import { printHelp } from "./help.js";
 import {
+  formatSkillsList,
+  installSkills,
+  listBundledSkills,
+  parseSkillsInstallFlags,
+} from "./skills.js";
+import {
   checkCaddyRoutes,
   discoverWorkspaces,
   formatWorkspaceTable,
@@ -162,6 +168,39 @@ async function delegateTemplateizer(
   return templateizerRun([templateizerCommand, appPath, ...flags]);
 }
 
+async function runSkills(subcommand: string | undefined, rest: string[]): Promise<number> {
+  if (subcommand === "list" || subcommand === "ls") {
+    console.log(formatSkillsList(listBundledSkills()));
+    return 0;
+  }
+
+  if (subcommand === "install") {
+    const { skillNames, global, force, targets } = parseSkillsInstallFlags(rest);
+    try {
+      const result = installSkills({ skillNames, global, force, targets });
+      for (const row of result.installed) {
+        console.log(`✓ ${row.skill} → ${row.dest}`);
+      }
+      for (const row of result.skipped) {
+        console.log(`⊘ ${row.skill} → ${row.dest} (${row.reason})`);
+      }
+      if (result.installed.length === 0 && result.skipped.length > 0) {
+        console.log("\nNo skills installed. Use --force to overwrite.");
+        return 1;
+      }
+      console.log(`\n${result.installed.length} install(s) completed.`);
+      return 0;
+    } catch (err) {
+      console.error(`✗ ${err instanceof Error ? err.message : String(err)}`);
+      return 1;
+    }
+  }
+
+  console.error(`Unknown skills subcommand: ${subcommand ?? "(none)"}`);
+  console.error("Usage: proxima skills list | proxima skills install [flags] [skill...]");
+  return 1;
+}
+
 export async function run(argv = process.argv.slice(2)): Promise<number> {
   if (argv.length === 0 || argv[0] === "help" || argv[0] === "--help" || argv[0] === "-h") {
     printHelp();
@@ -181,6 +220,11 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     }
     console.error(`Unknown caddy subcommand: ${subcommand ?? "(none)"}`);
     return 1;
+  }
+
+  if (command === "skills") {
+    const [subcommand, ...skillRest] = rest;
+    return runSkills(subcommand, skillRest);
   }
 
   const alias = ALIASES[command];

@@ -7,128 +7,59 @@ Desde cero hasta un storefront funcionando en ~10 minutos.
 ## Prerequisitos
 
 - Node.js 22+
-- pnpm 9+
-- Una cuenta en Proxima con al menos un Website creado
-- Las credenciales de la API
+- pnpm o npm
+- Website creado en Proxima (o modo fixtures para demo)
+- Service key con scope `cms:websites:write`
 
 ---
 
-## Opción A — Usar el starter (recomendado)
+## Opción A — Golden template (recomendado)
+
+Clona el monorepo [proxima-storefronts](https://github.com/proxima-io/proxima-storefronts) y usa `apps/214store` como referencia, o copia ese app para un nuevo cliente.
 
 ```bash
-# Clonar el starter desde el monorepo
-cp -r examples/storefront-starter mi-tienda
-cd mi-tienda
-
-# Instalar dependencias
-pnpm install
-
-# Configurar variables de entorno
-cp .env.example .env
-```
-
-Editar `.env`:
-
-```env
-PROXIMA_API_URL=https://api.proxima.io     # URL base de la API
-PROXIMA_DOMAIN=mitienda.proxima.app        # Tu dominio (o subdominio de desarrollo)
-PROXIMA_SERVICE_KEY=sk_live_...            # Service key del tenant
-```
-
-```bash
-pnpm dev
-# → http://localhost:4321
+git clone …/proxima-storefronts
+cd proxima-storefronts
+npm install
+cp apps/214store/.env.example apps/214store/.env
+# editar PROXIMA_* 
+npm run dev:214store
 ```
 
 ---
 
-## Opción B — Proyecto nuevo desde cero
+## Opción B — Proyecto standalone
 
 ```bash
-# Crear proyecto Astro
 pnpm create astro@latest mi-tienda -- --template minimal --typescript strict
 cd mi-tienda
 
-# Instalar SDK
-pnpm add @proxima-io/storefront-core @proxima-io/storefront-cms @proxima-io/storefront-builder-sdk @proxima-io/storefront-commerce
+pnpm add @proxima-io/storefront-core @proxima-io/storefront-cms \
+  @proxima-io/storefront-builder-sdk @proxima-io/storefront-commerce
+
+npm install -g @proxima-io/cli
+proxima skills install
 ```
 
-Configurar Astro para SSR:
+Configura SSR (`@astrojs/node`), crea `proxima.website.json`, `SectionRenderer`, `SiteLayout` con shell — sigue [03-architecture.md](./03-architecture.md).
 
-```js
-// astro.config.mjs
-import { defineConfig } from 'astro/config';
-import node from '@astrojs/node';
+Starter de referencia en el SDK: `examples/storefront-starter/` (si existe en tu checkout).
 
-export default defineConfig({
-  output: 'server',
-  adapter: node({ mode: 'standalone' }),
-});
-```
-
-Crear el archivo de configuración del SDK:
-
-```ts
-// src/lib/proxima.ts
-import { fetchProximaWebsite } from '@proxima-io/storefront-core';
-
-export const proximaConfig = {
-  baseUrl: import.meta.env.PROXIMA_API_URL,
-  domain:  import.meta.env.PROXIMA_DOMAIN,
-  serviceKey: import.meta.env.PROXIMA_SERVICE_KEY,
-};
-
-/** Resuelve el website del tenant. Cachear en producción. */
-export async function getWebsite() {
-  return fetchProximaWebsite(proximaConfig);
-}
-```
-
-Crear la página catch-all:
-
-```astro
 ---
-// src/pages/[...path].astro
-import { fetchProximaComposition } from '@proxima-io/storefront-core';
-import { getWebsite, proximaConfig } from '../lib/proxima';
-import { SECTION_MAP } from '../sections';
 
-const website = await getWebsite();
-const path = '/' + (Astro.params.path ?? '');
+## CLI Proxima
 
-let composition;
-try {
-  composition = await fetchProximaComposition({ ...proximaConfig, path }, website);
-} catch (e: any) {
-  if (e.status === 404) return Astro.redirect('/404');
-  throw e;
-}
----
-<!doctype html>
-<html lang={website.locale}>
-  <head>
-    <meta charset="UTF-8" />
-    <title>{composition.seo?.meta_title ?? website.name}</title>
-    <meta name="description" content={composition.seo?.meta_description ?? ''} />
-  </head>
-  <body>
-    {composition.sections.map(section => {
-      const Component = SECTION_MAP[section.type];
-      return Component
-        ? <Component section={section} website={website} composition={composition} />
-        : null;
-    })}
-  </body>
-</html>
+```bash
+npm install -g @proxima-io/cli
+
+proxima init              # wizard → .proxima/credentials.json
+proxima validate          # validar manifiesto (desde app dir o slug en monorepo)
+proxima deploy            # subir section_types + pages + shell a la API
+proxima skills list       # agent skills para Cursor / Claude
+proxima skills install    # instalar en .cursor/skills + .claude/skills
 ```
 
-Crear el section router mínimo:
-
-```ts
-// src/sections/index.ts
-// Importar componentes a medida que los vayas creando
-export const SECTION_MAP: Record<string, any> = {};
-```
+En monorepo con varios apps: `proxima list` descubre `apps/*/proxima.website.json`.
 
 ---
 
@@ -136,28 +67,46 @@ export const SECTION_MAP: Record<string, any> = {};
 
 | Variable | Descripción | Requerida |
 |----------|-------------|-----------|
-| `PROXIMA_API_URL` | URL base de la API. E.g. `https://api.proxima.io` | ✅ |
-| `PROXIMA_DOMAIN` | Dominio del storefront. Debe coincidir con el website en el admin | ✅ |
-| `PROXIMA_SERVICE_KEY` | Service key del tenant para requests server-side | ✅ |
-| `PUBLIC_PROXIMA_API_URL` | Igual que `PROXIMA_API_URL` pero expuesto al cliente (para analytics) | Recomendada |
+| `PROXIMA_API_URL` | URL base API | ✅ |
+| `PROXIMA_WEBSITE_DOMAIN` | Dominio del website (single-tenant) | ✅ |
+| `PROXIMA_SERVICE_KEY` | Service key server-side | ✅ |
+| `PROXIMA_DATA_MODE` | `fixtures` \| `live` | Opcional |
+| `PROXIMA_TEMPLATE_DEMO_DOMAIN` | Dominios demo comma-separated | Solo marketplace preview |
+
+Alias aceptado: `PROXIMA_DOMAIN` = `PROXIMA_WEBSITE_DOMAIN`.
 
 ---
 
-## Verificar que funciona
+## Primer deploy
 
-Con el servidor corriendo, abrir `http://localhost:4321` debería mostrar las secciones
-configuradas en el admin para la ruta `/` (home page).
+1. Website debe existir en admin (mismo dominio que `.env`)
+2. Tener `proxima.website.json` con `section_types` + `pages` + `shell_sections`
+3. Ejecutar:
 
-Si ves una página en blanco: el website probablemente no tiene secciones configuradas aún.
-Ir al admin → Builder → agregar secciones.
+```bash
+proxima init
+proxima validate
+proxima deploy --dry-run
+proxima deploy
+```
 
-Si ves un error 404: verificar que `PROXIMA_DOMAIN` coincide exactamente con el dominio
-del website en el admin de Proxima.
+El deploy **no** sube catálogo ni rellena contenido si el merchant ya editó secciones. Ver [09-deploy.md](./09-deploy.md).
+
+---
+
+## Verificar
+
+- `http://localhost:4325` (o tu port) muestra home con secciones
+- Builder: abrir website en admin → se ven section types del manifiesto
+- Preview: URL con `?proxima_preview=1` activa inline editing
+
+Si página en blanco en live: falta scaffold o contenido — agregar secciones en Builder o correr seed (dev).
 
 ---
 
 ## Siguientes pasos
 
-1. [Entender el modelo mental](./01-mental-model.md) — si no lo leíste aún
-2. [Arquitectura de archivos](./03-architecture.md) — cómo organizar el proyecto
-3. [Crear tus primeras secciones](./04-sections-and-attributes.md)
+1. [Modelo mental](./01-mental-model.md)
+2. [Arquitectura](./03-architecture.md)
+3. [Sections](./04-sections-and-attributes.md)
+4. [Agent skills](./10-agent-skills.md)

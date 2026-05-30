@@ -1,357 +1,193 @@
 # 03 — Arquitectura de archivos
 
-Estructura recomendada para un storefront Proxima en Astro.
+Estructura recomendada para un storefront Proxima single-tenant en Astro (patrón golden template).
 
 ---
 
 ## Estructura completa
 
 ```
-src/
-  lib/
-    proxima.ts          # Config + getWebsite() cacheado
-    session.ts          # Helpers para cookies de buyer
-
-  layouts/
-    BaseLayout.astro    # HTML base: analytics, bridge, theme tokens, fonts
-
-  middleware/
-    index.ts            # Validación de sesión + refresh automático
-
-  sections/
-    index.ts            # Section router: type → Astro component
-    HeroSection.astro
-    ProductGridSection.astro
-    CategoryGridSection.astro
-    HeaderSection.astro
-    FooterSection.astro
-    SearchSection.astro
-    # ... una sección por section type
-
-  components/
-    ProductCard.astro
-    SearchBar.astro       # client:load
-    CartDrawer.astro      # client:load
-    WishlistButton.astro  # client:load
-    BuyerMenu.astro       # client:load
-
-  pages/
-    [...path].astro       # Catch-all: maneja TODAS las rutas via composición
-
-    api/
-      buyer/
-        login.ts          # POST — processBuyerLogin
-        register.ts       # POST — processBuyerRegister
-        logout.ts         # POST — processBuyerLogout
-        refresh.ts        # POST — processRefreshToken (para middleware)
-        profile.ts        # GET/PATCH — fetchBuyerProfile / updateBuyerProfile
-
-      cart/
-        index.ts          # GET — processGetCart
-        add.ts            # POST — processAddToCart
-        remove.ts         # DELETE — processRemoveCartItem
-        merge.ts          # POST — mergeGuestCart (tras login)
-        checkout.ts       # POST — processBuyerCheckout
-
-      coupon/
-        validate.ts       # GET — validateCoupon
-
-      wishlist/
-        index.ts          # GET/POST/DELETE
+apps/{slug}/                    # o proyecto standalone
+├── proxima.website.json        # Manifiesto: section_types, pages, shell, placeholders
+├── .proxima/credentials.json   # proxima init (gitignored)
+├── .env                        # PROXIMA_API_URL, PROXIMA_WEBSITE_DOMAIN, PROXIMA_SERVICE_KEY
+├── astro.config.mjs            # SSR + node adapter
+└── src/
+    ├── layouts/
+    │   └── SiteLayout.astro    # HTML base, shell (header/mega_menu/footer), analytics
+    ├── pages/
+    │   ├── [...path].astro     # Catch-all → resolveRequest → views / SectionRenderer
+    │   └── api/buyer/          # Thin routes → @proxima-io/storefront-core process*
+    ├── components/
+    │   ├── sections/           # Secciones CMS por page
+    │   │   └── SectionRenderer.astro   # SECTION_REGISTRY
+    │   ├── layout/             # Header, MegaMenu, Footer (consumen shell values)
+    │   └── commerce/           # CartView, CheckoutView, ProductDetail, …
+    ├── views/                  # Despacho por resolver_kind (ProductListPage, …)
+    ├── lib/
+    │   ├── config.ts           # domain, data_mode, fixtures host
+    │   ├── resolver.ts         # resolveRequest, mapApiWebsite
+    │   ├── cms-types.ts        # ResolvedWebsite, WebsiteSection, …
+    │   └── storefront-data.ts  # StorefrontDataSource (live / fixtures-commerce)
+    └── fixtures/               # Demo template: website, composition, shell, catálogo
 ```
 
 ---
 
-## El catch-all `[...path].astro`
+## Single-tenant
 
-El corazón del routing. Una sola página maneja todas las rutas:
+Un proceso = un website. El dominio viene de **`PROXIMA_WEBSITE_DOMAIN`** en `.env` — no hay detección de hostname.
+
+```env
+PROXIMA_API_URL=http://localhost:8000
+PROXIMA_WEBSITE_DOMAIN=mitienda.localhost
+PROXIMA_SERVICE_KEY=pxa_test_...
+PROXIMA_DATA_MODE=fixtures   # opcional: fixtures en dev
+```
+
+---
+
+## Flujo de request
+
+```
+[...path].astro
+  resolveRequest(Astro.request)
+    → fetchProximaWebsite + fetchProximaComposition (o fixtures)
+    → ResolvedRequest { website, page, product?, path, status }
+
+  SiteLayout(website, page)
+    website.shell_sections.header|mega_menu|footer  ← global
+    slot → view según resolver_kind o SectionRenderer(page.sections)
+```
+
+**Shell** y **page sections** son rutas de render distintas. Ver [01-mental-model.md](./01-mental-model.md).
+
+---
+
+## Catch-all `[...path].astro`
+
+Una página maneja todas las rutas CMS + commerce:
 
 ```astro
 ---
-// src/pages/[...path].astro
-import BaseLayout from '../layouts/BaseLayout.astro';
-import { fetchProximaComposition } from '@proxima-io/storefront-core';
-import { getWebsite, proximaConfig } from '../lib/proxima';
-import { SECTION_MAP } from '../sections';
+import SiteLayout from "@/layouts/SiteLayout.astro";
+import { resolveRequest } from "@/lib/resolver";
+import SectionRenderer from "@/components/sections/SectionRenderer.astro";
+import ProductListPage from "@/views/ProductListPage.astro";
+// … otras views por resolver_kind
 
-const website = await getWebsite();
-const path = '/' + (Astro.params.path ?? '');
+const resolved = await resolveRequest(Astro.request);
+if (resolved.status === "not_found") return Astro.redirect("/404");
 
-let composition;
-try {
-  composition = await fetchProximaComposition({ ...proximaConfig, path }, website);
-} catch (e: any) {
-  if (e.status === 404) return Astro.redirect('/404');
-  throw e;
-}
-
-const { sections, seo, resolver_kind, resolved_data } = composition;
+const { website, page } = resolved;
+const cmsPreview = Astro.url.searchParams.has("proxima_preview");
 ---
-
-<BaseLayout {website} {seo}>
-  {sections.map(section => {
-    const Component = SECTION_MAP[section.type];
-    if (!Component) return null;
-    return (
-      <Component
-        section={section}
-        website={website}
-        resolverKind={resolver_kind}
-        resolvedData={resolved_data}
-      />
-    );
-  })}
-</BaseLayout>
+<SiteLayout {website} {page} {cmsPreview}>
+  {page?.resolver_kind === "product_list" && (
+    <ProductListPage website={website} page={page} />
+  )}
+  {page?.sections?.map((section) => (
+    <SectionRenderer {section} {cmsPreview} website={website} />
+  ))}
+</SiteLayout>
 ```
 
-### ¿Por qué un solo catch-all y no páginas por resolver_kind?
+Vistas commerce (`cart`, `checkout`, `product_detail`) suelen tener componentes dedicados en `src/views/` o `src/components/commerce/` además de secciones CMS opcionales (`commerce_view`).
 
-Porque **el comercio configura sus propias secciones** para cada tipo de página.
-No hay garantía de que `/categoria/zapatillas` y `/categoria/ropa` tengan las mismas secciones.
-El catch-all resuelve la composición y renderiza lo que viene — siempre funciona.
+---
 
-Si necesitas lógica específica por tipo de página (e.g. agregar structured data para PDPs),
-hazlo dentro del catch-all con un switch en `resolver_kind`:
+## SectionRenderer y SECTION_REGISTRY
 
 ```astro
 ---
-// Structured data para PDPs
-const ldJson = resolver_kind === 'product_detail'
-  ? buildProductSchema(resolved_data.product)
-  : null;
+// SectionRenderer.astro — único registro de section types
+const SECTION_REGISTRY = {
+  hero_bento: HeroBento,
+  product_grid: ProductGrid,
+  // …
+} as const;
+
+const Component = SECTION_REGISTRY[section.type as keyof typeof SECTION_REGISTRY];
 ---
-{ldJson && <script type="application/ld+json" set:html={JSON.stringify(ldJson)} />}
+{Component ? (
+  <Component
+    cmsPreview={cmsPreview}
+    attributesMeta={section.attributesMeta}
+    {...mapSectionValues(section)}
+  />
+) : null}
+```
+
+El `key` en `proxima.website.json` → `section_types[].key` debe coincidir con `SECTION_REGISTRY`.
+
+---
+
+## SiteLayout y shell
+
+```astro
+---
+const headerSection = website.shell_sections?.header;
+const megaMenuSection = website.shell_sections?.mega_menu;
+const footerSection = website.shell_sections?.footer;
+
+const headerData = headerSection?.values ?? {};
+const megaMenuData = megaMenuSection?.values ?? {};
+// category tree: fetch API (catálogo) + fusionar category_overrides de megaMenuData
+---
+<Header data={headerData} … />
+<MegaMenu data={megaMenuData} navTree={navTree} … />
+<slot />
+<Footer data={footerSection?.values} … />
 ```
 
 ---
 
-## El section router `sections/index.ts`
+## API routes (commerce)
+
+Patrón thin wrapper — misma firma en todos los storefronts:
 
 ```ts
-// src/sections/index.ts
-import type { Component } from 'astro';
+// src/pages/api/buyer/cart/add.ts
+import type { APIRoute } from "astro";
+import { processAddToCart } from "@proxima-io/storefront-core";
+import { getProximaEnv } from "@/lib/config";
 
-// Importar todos tus componentes de sección
-import HeroSection from './HeroSection.astro';
-import ProductGridSection from './ProductGridSection.astro';
-import CategoryGridSection from './CategoryGridSection.astro';
-import HeaderSection from './HeaderSection.astro';
-import FooterSection from './FooterSection.astro';
-import SearchSection from './SearchSection.astro';
-import BannerSection from './BannerSection.astro';
-
-/**
- * Mapea section.type → componente Astro.
- * Agregar aquí cada nuevo section type que implementes.
- *
- * La clave debe coincidir EXACTAMENTE con el `key` del SectionType
- * registrado en el admin de Proxima.
- */
-export const SECTION_MAP: Record<string, any> = {
-  header:        HeaderSection,
-  hero:          HeroSection,
-  product_grid:  ProductGridSection,
-  category_grid: CategoryGridSection,
-  search:        SearchSection,
-  banner:        BannerSection,
-  footer:        FooterSection,
+export const POST: APIRoute = async ({ request, cookies, locals }) => {
+  const env = getProximaEnv();
+  // … parse body, session cookie, delegar a processAddToCart
 };
 ```
 
+Ver [07-commerce.md](./07-commerce.md) para auth, carrito, guest checkout.
+
 ---
 
-## `BaseLayout.astro`
+## Modos de datos
 
-El layout base incluye todo lo que va en cada página:
+| Modo | Cuándo | Fuente |
+|------|--------|--------|
+| **live** | Website merchant | API Proxima |
+| **fixtures** | Demo template / dev offline | `src/fixtures/*.json` + `fixtures-commerce` |
 
-```astro
----
-// src/layouts/BaseLayout.astro
-import { analytics } from '@proxima-io/storefront-core';
-import { CmsPreviewBridge } from '@proxima-io/storefront-builder-sdk';
-import { isCmsPreview } from '@proxima-io/storefront-cms';
+`resolveRequest` elige modo según `PROXIMA_DATA_MODE`, `website.data_mode`, o dominio demo.
 
-interface Props {
-  website: ProximaWebsiteResponse;
-  seo?: { meta_title?: string; meta_description?: string; og_image_url?: string; robots?: string };
-}
-
-const { website, seo } = Astro.props;
-const isPreview = isCmsPreview(Astro.url);
-const themeVars = buildCssVars(website.theme_tokens);
 ---
 
-<!doctype html>
-<html lang={website.locale}>
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{seo?.meta_title ?? website.name}</title>
-    {seo?.meta_description && <meta name="description" content={seo.meta_description} />}
-    {seo?.og_image_url && <meta property="og:image" content={seo.og_image_url} />}
-    <meta name="robots" content={seo?.robots ?? 'index, follow'} />
-    <style set:html={`:root { ${themeVars} }`} />
-  </head>
-  <body>
-    <!-- Builder bridge (solo activo en preview mode) -->
-    <CmsPreviewBridge enabled={isPreview} />
+## CLI y skills
 
-    <slot />
-
-    <!-- Analytics — init client-side -->
-    <script define:vars={{ apiUrl: import.meta.env.PUBLIC_PROXIMA_API_URL, websiteId: website.id, businessId: website.business_id, locale: website.locale }}>
-      import('@proxima-io/storefront-core').then(({ analytics }) => {
-        analytics.init({ apiUrl, websiteId, businessId, locale });
-      });
-    </script>
-  </body>
-</html>
-
-<script>
-  function buildCssVars(tokens) {
-    if (!tokens) return '';
-    return Object.entries(tokens)
-      .map(([k, v]) => `--proxima-${k}: ${v}`)
-      .join('; ');
-  }
-</script>
+```bash
+npm install -g @proxima-io/cli
+proxima init
+proxima deploy
+proxima skills install    # agent workflows → .cursor/skills, .claude/skills
 ```
 
----
-
-## Middleware — Sesión del buyer
-
-El middleware valida el `buyer_token` en cada request y refresca la sesión si está expirada:
-
-```ts
-// src/middleware/index.ts
-import { defineMiddleware } from 'astro:middleware';
-import {
-  fetchBuyerProfile,
-  processRefreshToken,
-  BUYER_COOKIE_NAME,
-  BUYER_REFRESH_COOKIE_NAME,
-  BUYER_COOKIE_OPTIONS,
-} from '@proxima-io/storefront-core';
-import { proximaConfig } from '../lib/proxima';
-
-export const onRequest = defineMiddleware(async ({ cookies, locals }, next) => {
-  const token = cookies.get(BUYER_COOKIE_NAME)?.value;
-
-  if (!token) {
-    locals.buyer = null;
-    return next();
-  }
-
-  try {
-    // Intentar obtener el perfil con el token actual
-    locals.buyer = await fetchBuyerProfile(
-      { baseUrl: proximaConfig.baseUrl },
-      { business_id: import.meta.env.PROXIMA_BUSINESS_ID },
-      { token }
-    );
-    return next();
-  } catch (e: any) {
-    if (e.status !== 401) throw e;
-  }
-
-  // Token expirado — intentar refresh
-  const refreshToken = cookies.get(BUYER_REFRESH_COOKIE_NAME)?.value;
-  if (!refreshToken) {
-    cookies.delete(BUYER_COOKIE_NAME, { path: '/' });
-    locals.buyer = null;
-    return next();
-  }
-
-  try {
-    const { access_token, refresh_token } = await processRefreshToken(
-      { apiUrl: proximaConfig.baseUrl, domain: proximaConfig.domain },
-      { refreshToken }
-    );
-    cookies.set(BUYER_COOKIE_NAME, access_token, BUYER_COOKIE_OPTIONS);
-    if (refresh_token) cookies.set(BUYER_REFRESH_COOKIE_NAME, refresh_token, BUYER_COOKIE_OPTIONS);
-    // Reintentar con el nuevo token
-    locals.buyer = await fetchBuyerProfile(
-      { baseUrl: proximaConfig.baseUrl },
-      { business_id: import.meta.env.PROXIMA_BUSINESS_ID },
-      { token: access_token }
-    );
-  } catch {
-    // Refresh falló — limpiar sesión
-    cookies.delete(BUYER_COOKIE_NAME, { path: '/' });
-    cookies.delete(BUYER_REFRESH_COOKIE_NAME, { path: '/' });
-    locals.buyer = null;
-  }
-
-  return next();
-});
-```
-
-Añadir `locals.buyer` a `env.d.ts`:
-
-```ts
-// src/env.d.ts
-/// <reference types="astro/client" />
-
-interface Locals {
-  buyer: import('@proxima-io/storefront-core').BuyerProfile | null;
-}
-```
-
-Desde cualquier página o API route:
-
-```astro
----
-// Acceder al buyer desde el middleware
-const { buyer } = Astro.locals;
-if (!buyer) return Astro.redirect('/login');
----
-<p>Hola, {buyer.full_name}!</p>
-```
+Ver [09-deploy.md](./09-deploy.md) y [10-agent-skills.md](./10-agent-skills.md).
 
 ---
 
-## API Routes — Patrones
+## Siguiente lectura
 
-Cada API route es thin wrapper alrededor de un `process*` helper:
-
-```ts
-// src/pages/api/buyer/login.ts
-import type { APIRoute } from 'astro';
-import {
-  processBuyerLogin,
-  MissingFieldsError,
-  BUYER_AUTH_ERRORS,
-  BUYER_COOKIE_NAME,
-  BUYER_REFRESH_COOKIE_NAME,
-  BUYER_COOKIE_OPTIONS,
-} from '@proxima-io/storefront-core';
-
-const env = {
-  apiUrl: import.meta.env.PROXIMA_API_URL,
-  domain: import.meta.env.PROXIMA_DOMAIN,
-};
-
-export const POST: APIRoute = async ({ request, cookies }) => {
-  const { email, password, next } = await request.json();
-
-  try {
-    const { access_token, refresh_token, next: redirectTo } =
-      await processBuyerLogin(env, { email, password, next });
-
-    cookies.set(BUYER_COOKIE_NAME, access_token, BUYER_COOKIE_OPTIONS);
-    if (refresh_token) {
-      cookies.set(BUYER_REFRESH_COOKIE_NAME, refresh_token, BUYER_COOKIE_OPTIONS);
-    }
-
-    return Response.json({ ok: true, next: redirectTo });
-  } catch (e: any) {
-    const status = e.status ?? 500;
-    const detail = e.data?.detail ?? 'Error inesperado';
-    return Response.json({ ok: false, error: detail }, { status });
-  }
-};
-```
-
-El mismo patrón aplica para `register.ts`, `logout.ts`, `cart/add.ts`, etc.
-Ver la implementación completa en `examples/storefront-starter/src/pages/api/`.
+1. [Sections y attributes](./04-sections-and-attributes.md)
+2. [Builder integration](./06-builder-integration.md)
+3. [Deploy manifiesto](./09-deploy.md)

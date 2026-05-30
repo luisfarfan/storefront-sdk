@@ -1,361 +1,242 @@
 # 04 — Sections y Attributes
 
-Cómo definir, registrar y renderizar secciones. El ciclo completo desde diseño hasta código.
+Cómo definir, registrar y renderizar secciones. Contrato del golden template (`214store`).
 
 ---
 
-## El ciclo de vida de una sección
+## Tres capas del contrato
 
 ```
-1. Diseño → Identificar qué partes son editables
-2. Schema  → Definir attribute_schema (nombre, tipo, label, help_text, options)
-3. Registro → Crear el SectionType en el admin (o via template)
-4. Componente → Crear el Astro component que renderiza
-5. Router → Añadir al SECTION_MAP
-6. Builder → Envolver con EditableSection/EditableAttribute
+proxima.website.json
+  section_types[].attribute_schema[]   ← qué campos existen (Builder)
+
+API / composición
+  section.values.{name}                ← valores del merchant (runtime)
+  section.attributesMeta               ← meta inline-editing (Builder preview)
+
+Storefront Astro
+  SectionRenderer → props del componente
+  getSectionAttr(attributesMeta)       ← builder-sdk
 ```
+
+**Regla de oro:** `attribute_schema[].name` === prop del componente === key en `section.values`.
+
+Guía de schema: [07-cms-attribute-schema.md](./07-cms-attribute-schema.md) · Modelo completo: [01-mental-model.md](./01-mental-model.md).
 
 ---
 
-## Paso 1 — Analizar el diseño
-
-Dado este bloque de HTML:
-
-```html
-<section class="hero">
-  <img src="banner.jpg" alt="Banner" />
-  <h1>Bienvenido a nuestra tienda</h1>
-  <p>Los mejores productos al mejor precio</p>
-  <a href="/productos" class="cta">Ver catálogo</a>
-</section>
-```
-
-Preguntarse: ¿qué debe poder cambiar el comercio desde el builder?
+## Ciclo de vida de una sección
 
 ```
-imagen    → editable → type: image
-título    → editable → type: text
-subtítulo → editable → type: text
-botón     → editable → type: link  (texto + URL juntos)
+1. Diseño     → qué es editable vs fijo en código
+2. Schema     → attribute_schema en proxima.website.json
+3. Componente → Astro con props + empty-state contract
+4. Registry   → SECTION_REGISTRY en SectionRenderer.astro
+5. Shell      → si category=shell, render en SiteLayout (no en page sections)
+6. Deploy     → proxima deploy
+7. Builder    → EditableAttribute + attributesMeta (preview)
 ```
+
+Skill recomendado: `proxima skills install add-section wire-cms-sections`
 
 ---
 
-## Paso 2 — Definir el schema
+## Paso 1 — Schema en el manifiesto
 
-Guía detallada de `help_text`, `options` estructuradas y overrides: **[07-cms-attribute-schema.md](./07-cms-attribute-schema.md)**.
-
-En el `proxima.template.json`, `proxima.website.json` o directamente en el admin:
+Solo **`proxima.website.json`** (no archivos legacy separados):
 
 ```json
 {
-  "key": "hero",
-  "label": "Hero Principal",
+  "key": "cta_banner",
+  "label": "Banner CTA",
   "category": "content",
   "attribute_schema": [
     {
-      "name": "image",
-      "label": "Imagen de fondo",
-      "type": "image",
-      "is_required": true,
-      "order": 1
-    },
-    {
-      "name": "headline",
+      "name": "heading",
       "label": "Título",
       "type": "text",
-      "is_required": true,
       "localizable": true,
-      "order": 2
-    },
-    {
-      "name": "subheadline",
-      "label": "Subtítulo",
-      "type": "text",
-      "localizable": true,
-      "order": 3
+      "order": 1,
+      "config": { "help_text": "Titular principal del banner." }
     },
     {
       "name": "cta",
-      "label": "Botón CTA",
+      "label": "Botón",
       "type": "link",
-      "order": 4
+      "order": 2
+    },
+    {
+      "name": "products",
+      "label": "Productos",
+      "type": "smart_collection_id",
+      "order": 3,
+      "config": {
+        "allowed_smart_collection_types": ["product_list"],
+        "help_text": "Colección resuelta en composición."
+      }
     }
   ]
 }
 ```
 
+Scaffold con defaults opcionales:
+
+```json
+{
+  "section_type": "cta_banner",
+  "order": 1,
+  "default_values": {
+    "heading": "Ofertas de la semana",
+    "products": "auto:featured_products"
+  }
+}
+```
+
 ---
 
-## Paso 3 — Crear el componente Astro
+## Paso 2 — Componente Astro (golden template)
 
 ```astro
 ---
-// src/sections/HeroSection.astro
-import { EditableSection, EditableAttribute } from '@proxima-io/storefront-builder-sdk';
-import type { CmsSection } from '@proxima-io/storefront-cms';
+import BuilderEmptyState from "@proxima-io/storefront-builder-sdk/BuilderEmptyState.astro";
+import EditableAttribute from "@proxima-io/storefront-builder-sdk/EditableAttribute.astro";
+import { getSectionAttr } from "@proxima-io/storefront-builder-sdk";
 
 interface Props {
-  section: CmsSection;
+  cmsPreview?: boolean;
+  attributesMeta?: Record<string, unknown>;
+  heading?: string;
+  cta?: { url?: string; label?: string; target?: string };
+  products?: { items?: unknown[] };
 }
 
-const { section } = Astro.props;
-const { image, headline, subheadline, cta } = section.attributes;
+const props = Astro.props;
+const { key: attributeKey } = getSectionAttr(props.attributesMeta);
+const heading = props.heading ?? "";
+const items = props.products?.items ?? [];
+const isEmpty = !heading && items.length === 0;
+
+if (!props.cmsPreview && isEmpty) return null;
+const showEmptyState = props.cmsPreview && isEmpty;
 ---
 
-<EditableSection {section}>
-  <section class="hero" style={image ? `background-image: url(${image})` : ''}>
-    <div class="hero__content">
-      <EditableAttribute {section} attributeKey="headline">
-        <h1 class="hero__title">{headline}</h1>
+<section>
+  {showEmptyState && <BuilderEmptyState sectionName="Banner CTA" />}
+  {!showEmptyState && (
+    <>
+      <EditableAttribute meta={attributeKey("heading")} value={heading}>
+        <h2>{heading}</h2>
       </EditableAttribute>
-
-      {subheadline && (
-        <EditableAttribute {section} attributeKey="subheadline">
-          <p class="hero__subtitle">{subheadline}</p>
-        </EditableAttribute>
+      {props.cta?.url && (
+        <a href={props.cta.url}>{props.cta.label ?? "Ver más"}</a>
       )}
-
-      {cta?.url && (
-        <EditableAttribute {section} attributeKey="cta">
-          <a href={cta.url} class="hero__cta" target={cta.target}>
-            {cta.label ?? cta.url}
-          </a>
-        </EditableAttribute>
-      )}
-    </div>
-  </section>
-</EditableSection>
-
-<style>
-  .hero {
-    min-height: 60vh;
-    background-size: cover;
-    background-position: center;
-    display: flex;
-    align-items: center;
-  }
-  .hero__content { padding: 2rem; max-width: 1200px; margin: 0 auto; }
-  .hero__title { font-size: clamp(2rem, 5vw, 4rem); }
-  .hero__cta { display: inline-block; padding: .75rem 2rem; background: var(--proxima-primary); color: white; border-radius: var(--proxima-radius); }
-</style>
+    </>
+  )}
+</section>
 ```
+
+Props vienen de **`section.values`**, no de un objeto `section.attributes` genérico.
 
 ---
 
-## Paso 4 — Añadir al section router
-
-```ts
-// src/sections/index.ts
-import HeroSection from './HeroSection.astro';
-// ... otros imports
-
-export const SECTION_MAP: Record<string, any> = {
-  hero: HeroSection,    // ← añadir aquí
-  // ...
-};
-```
-
----
-
-## Los 9 tipos de atributos en práctica
-
-### `text`
+## Paso 3 — SectionRenderer
 
 ```astro
 ---
-const { headline } = section.attributes;
----
-<h1>{headline}</h1>
-```
-
-### `rich_text`
-
-Devuelve HTML. Usar `set:html` de Astro:
-
-```astro
----
-const { body } = section.attributes;
----
-<EditableAttribute {section} attributeKey="body">
-  <div class="rich-text" set:html={body} />
-</EditableAttribute>
-```
-
-### `image`
-
-Devuelve una URL string:
-
-```astro
----
-const { banner_image } = section.attributes;
----
-{banner_image && <img src={banner_image} alt="" loading="lazy" />}
-```
-
-### `link`
-
-Devuelve `{ url: string, label?: string, target?: "_blank" | "_self" }`:
-
-```astro
----
-const { cta } = section.attributes;
----
-{cta?.url && (
-  <a href={cta.url} target={cta.target ?? '_self'}>
-    {cta.label ?? 'Ver más'}
-  </a>
+// SectionRenderer.astro (extracto)
+{section.type === "cta_banner" && (
+  <CtaBanner
+    cmsPreview={cmsPreview}
+    attributesMeta={section.attributesMeta}
+    heading={section.values.heading as string}
+    cta={section.values.cta as Props["cta"]}
+    products={section.values.products as Props["products"]}
+  />
 )}
+---
 ```
 
-### `boolean`
-
-```astro
----
-const { show_price } = section.attributes;
----
-{show_price && <span class="price">{product.price_formatted}</span>}
-```
-
-### `number`
-
-```astro
----
-const { columns } = section.attributes;   // e.g. 3
----
-<div style={`grid-template-columns: repeat(${columns ?? 3}, 1fr)`}>
-```
-
-### `array`
-
-Devuelve una lista de objetos. El schema define los campos de cada item:
-
-```astro
----
-// Ejemplo: array de items de FAQ
-// attribute_schema: type=array, config.item_fields: [{ name: "question", type: "text" }, { name: "answer", type: "rich_text" }]
-const { faq_items } = section.attributes;
----
-<dl>
-  {(faq_items ?? []).map((item, i) => (
-    <div>
-      <dt>{item.question}</dt>
-      <dd set:html={item.answer} />
-    </div>
-  ))}
-</dl>
-```
-
-### `object`
-
-Similar a array pero es un solo objeto con campos anidados:
-
-```astro
----
-const { store_info } = section.attributes;
-// store_info: { name: "Mi Tienda", phone: "999...", email: "..." }
----
-<address>
-  <p>{store_info?.name}</p>
-  <p>{store_info?.phone}</p>
-</address>
-```
-
-### `smart_collection_id`
-
-El más potente — ver el [capítulo de Smart Collections](./05-smart-collections.md).
+`SECTION_REGISTRY` mapea `section.type` → componente. El `key` del manifiesto debe coincidir.
 
 ---
 
-## Localización de atributos
+## Shell vs page sections
 
-Los atributos con `localizable: true` llegan ya resueltos en el idioma correcto.
-La API resuelve el locale según el `Accept-Language` header de la composición.
-**No tienes que hacer nada** — el valor ya es el string del locale actual.
+| | Page section | Shell section |
+|--|--------------|---------------|
+| **Ejemplos** | hero_bento, product_grid | header, mega_menu, footer |
+| **Manifiesto** | `pages[].scaffold_sections` | `shell_sections[]` |
+| **Render** | SectionRenderer / views | SiteLayout.astro |
+| **Defaults** | `default_values` por scaffold | `shell_default_values` global |
 
-Si por alguna razón necesitas acceder a otro locale:
+No declares header/footer en cada página.
 
-```ts
-// El valor bruto de un campo localizable en la base de datos es:
-// { "es": "Bienvenido", "en": "Welcome" }
-// La API ya resuelve y te entrega solo el string del locale activo.
-const headline = section.attributes.headline; // → "Bienvenido" (si locale=es)
-```
+---
+
+## Overrides (presentación)
+
+Arrays en `values` que fusionan sobre datos vivos — **no mutan catálogo**:
+
+| Override | Sección | Uso |
+|----------|---------|-----|
+| `category_overrides` | mega_menu | badge, highlight, label_override, hidden sobre category tree API |
+| `product_overrides` | hero_bento | tile size, badge, CTA por producto de la smart collection |
+
+Pre-computar merge en frontmatter Astro (nunca block-body en `.map()` del template).
+
+---
+
+## Tipos de atributo en runtime
+
+| Tipo | En `section.values` |
+|------|---------------------|
+| `text` / `rich_text` | string |
+| `image` | URL string |
+| `boolean` | boolean |
+| `number` | number |
+| `link` | `{ url, label?, target?, is_external? }` |
+| `select` | string (value de opción) |
+| `array` | `object[]` según `item_fields` |
+| `smart_collection_id` | `{ type, items, meta }` ya resuelto |
+
+Ver ejemplos de render en [05-smart-collections.md](./05-smart-collections.md) y selects/arrays en [07-cms-attribute-schema.md](./07-cms-attribute-schema.md).
+
+---
+
+## Localización
+
+`localizable: true` → la API resuelve al locale del website. En el storefront recibes un **string**, no un dict por idioma.
 
 ---
 
 ## Valores por defecto seguros
 
-Los atributos pueden ser `undefined` si el comercio no los ha configurado.
-Siempre usar valores por defecto para evitar errores en producción:
-
 ```ts
-const {
-  headline = 'Título por defecto',
-  show_price = true,
-  columns = 3,
-  items = [],
-} = section.attributes;
+const heading = props.heading ?? "";
+const items = (props.products?.items ?? []) as ProductSummary[];
 ```
 
+En live, secciones vacías retornan `null` (empty-state contract). En Builder, `BuilderEmptyState`.
+
 ---
 
-## Anatomía de un componente de sección completo
+## Builder — tres wrappers
 
-```astro
----
-// src/sections/FeatureListSection.astro
-import { EditableSection, EditableAttribute, EditableItem } from '@proxima-io/storefront-builder-sdk';
-import type { CmsSection } from '@proxima-io/storefront-cms';
+| Componente | Envuelve |
+|------------|----------|
+| `EditableSection` | Sección completa (selección en árbol) |
+| `EditableAttribute` | Campo escalar |
+| `EditableItem` | Item de un array |
 
-interface Feature {
-  icon: string;
-  title: string;
-  description: string;
-}
+Detalle: [06-builder-integration.md](./06-builder-integration.md).
 
-interface Props {
-  section: CmsSection;
-}
-
-const { section } = Astro.props;
-const {
-  headline = '',
-  features = [] as Feature[],
-  columns = 3,
-} = section.attributes;
 ---
 
-<EditableSection {section}>
-  <section class="features">
-    <EditableAttribute {section} attributeKey="headline">
-      <h2 class="features__title">{headline}</h2>
-    </EditableAttribute>
+## Checklist nueva sección
 
-    <div class="features__grid" style={`--cols: ${columns}`}>
-      {features.map((feature, index) => (
-        <EditableItem {section} attributeKey="features" itemIndex={index}>
-          <article class="feature-card">
-            <img src={feature.icon} alt="" class="feature-card__icon" />
-            <h3>{feature.title}</h3>
-            <p>{feature.description}</p>
-          </article>
-        </EditableItem>
-      ))}
-    </div>
-  </section>
-</EditableSection>
-
-<style>
-  .features__grid {
-    display: grid;
-    grid-template-columns: repeat(var(--cols, 3), 1fr);
-    gap: 2rem;
-  }
-</style>
-```
-
-Los tres componentes del builder SDK:
-- `EditableSection` — envuelve la sección completa (click para seleccionar en el tree)
-- `EditableAttribute` — envuelve un campo editable (click para abrir el editor del campo)
-- `EditableItem` — envuelve un item de un array (click para editar ese item específico)
+- [ ] `attribute_schema` en `proxima.website.json`
+- [ ] Componente con `cmsPreview`, `attributesMeta`, empty-state
+- [ ] Entrada en `SECTION_REGISTRY` + wiring de `section.values.*`
+- [ ] Si aplica: `scaffold_sections` con `default_values`
+- [ ] `proxima validate` → `proxima deploy`
+- [ ] Inline editing probado con `?proxima_preview=1`

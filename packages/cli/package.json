@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/cli",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Global CLI for Proxima storefronts — discover workspaces, deploy manifests, publish templates.",
   "license": "MIT",
@@ -21,7 +21,8 @@
   },
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "skills"
   ],
   "scripts": {
     "build": "tsc --project tsconfig.json",

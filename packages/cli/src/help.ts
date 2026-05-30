@@ -9,6 +9,8 @@ Usage:
   proxima validate [slug|path]
   proxima template:create [slug|path] [flags...]
   proxima template:publish [slug|path] [flags...]
+  proxima skills list
+  proxima skills install [flags] [skill...]
   proxima <templateizer-command> [slug|path] [flags...]
 
 Shortcuts
@@ -28,8 +30,12 @@ Examples
   proxima template:publish 214store --local-only
   proxima website-deploy apps/214store --yes
   proxima caddy check
+  proxima skills install
+  proxima skills install website-deploy wire-cms-sections --cursor
 
-Install globally
+Agent skills
+  Bundled skills install into .cursor/skills/ and .claude/skills/ (or --global).
+  See docs/10-agent-skills.md in proxima-storefront-sdk.
   npm install -g @proxima-io/cli
 
 Credentials

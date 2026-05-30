@@ -1,6 +1,6 @@
 # 07 — CMS attribute schema (manifiesto → Builder)
 
-Cómo declarar en **`proxima.website.json`** (o template) la estructura que el **Builder** muestra al comercio. La API **persiste** el JSON del developer; no sustituye schemas por nombre de section type.
+Cómo declarar en **`proxima.website.json`** la estructura que el **Builder** muestra al comercio. La API **persiste** el JSON del developer; no sustituye schemas por nombre de section type.
 
 ---
 
@@ -8,10 +8,10 @@ Cómo declarar en **`proxima.website.json`** (o template) la estructura que el *
 
 ```
 Developer escribe attribute_schema en proxima.website.json
-        → proxima-templateizer website-deploy .
+        → proxima deploy
         → API guarda WebsiteSectionType.attribute_schema (por website)
         → Builder lee el schema y renderiza controles
-        → Section.values guarda los valores (p. ej. "flagship", no el label)
+        → section.values guarda los valores del merchant (p. ej. "flagship", no el label)
 ```
 
 Normalización genérica en API (`item_schema` → `config.schema`, inferir `mode`): ver `proxima-api/docs/cms-attribute-schema.md`.

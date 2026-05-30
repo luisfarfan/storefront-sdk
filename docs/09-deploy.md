@@ -15,22 +15,20 @@ El comercio abre el Builder y ve **una página en blanco**. No puede agregar sec
 porque la API no sabe qué secciones existen. No puede editar atributos porque la API
 no sabe qué campos tiene cada sección.
 
-`proxima-templateizer website-deploy` resuelve los **schemas y la estructura** en un solo comando.
+`proxima deploy` resuelve los **schemas y la estructura** en un solo comando.
 
 > **No confundir con seed:** el deploy no sube catálogo, smart collections ni textos de secciones. Eso requiere scripts de seed (dev) o edición en Builder. En monorepo `proxima-storefronts`, ver `apps/214store/docs/DEPLOY.md` (orden: seed → deploy).
 
 ---
 
-## Dos archivos, dos flujos distintos
+## Manifiesto y flujos
 
-El starter incluye dos archivos de manifiesto. Es importante no confundirlos:
+| Acción | Archivo | Comando |
+|--------|---------|---------|
+| Deploy a website de cliente | `proxima.website.json` | `proxima deploy` |
+| Marketplace (registry) | mismo manifiesto + `marketplace_metadata` | `proxima template:create` / `template:publish` |
 
-| Archivo | Para qué | Comando |
-|---------|----------|---------|
-| `proxima.website.json` | Deploy a un website específico de un cliente | `proxima-templateizer website-deploy` |
-| `proxima.template.json` | Publicar en el Proxima Marketplace | `proxima-templateizer register/publish` |
-
-**Si estás construyendo para un cliente concreto, solo necesitas `proxima.website.json`.**
+Un solo archivo **`proxima.website.json`** por app Astro. Incluye `section_types`, `pages`, `shell_sections`, `smart_collection_placeholders`, `shell_default_values`.
 
 ---
 
@@ -50,7 +48,7 @@ Lo que el deploy sí hace:
 ### Opción A — Archivo JSON (recomendado)
 
 ```bash
-npx proxima-templateizer init
+proxima init
 ```
 
 El wizard interactivo te pregunta API URL, dominio y service key, y crea `.proxima/credentials.json` automáticamente. También lo agrega al `.gitignore` para que nunca se commitee.
@@ -69,7 +67,7 @@ El archivo resultante:
 Para usar un archivo en una ruta personalizada (útil con múltiples clientes):
 
 ```bash
-npx proxima-templateizer website-deploy . --credentials ~/secrets/cliente-a.json
+proxima website-deploy apps/mi-tienda --credentials ~/secrets/cliente-a.json
 ```
 
 ### Opción B — Variables de entorno / `.env`
@@ -103,7 +101,7 @@ Define exactamente lo que el deploy sube a la API.
 ### `section_types`
 
 Cada section type que implementaste en Astro **debe estar aquí**.
-El `key` debe coincidir exactamente con el de `SECTION_MAP`.
+El `key` debe coincidir exactamente con el de `SECTION_REGISTRY` en el storefront.
 
 ```json
 {
@@ -128,9 +126,8 @@ El `key` debe coincidir exactamente con el de `SECTION_MAP`.
   "path": "/",
   "label": "Home",
   "scaffold_sections": [
-    { "section_type": "header", "order": 1 },
-    { "section_type": "hero",   "order": 2 },
-    { "section_type": "footer", "order": 99 }
+    { "section_type": "hero_bento", "order": 1, "default_values": { "hero_products": "auto:featured_products" } },
+    { "section_type": "product_grid", "order": 2 }
   ]
 }
 ```
@@ -143,8 +140,7 @@ No llevan `path`:
   "resolver_kind": "product_detail",
   "label": "Detalle de Producto",
   "scaffold_sections": [
-    { "section_type": "header", "order": 1 },
-    { "section_type": "footer", "order": 99 }
+    { "section_type": "commerce_view", "order": 1 }
   ]
 }
 ```
@@ -162,11 +158,11 @@ primera vez. El comercio abre el Builder y ve la estructura ya armada.
 ## Ejecutar el deploy
 
 ```bash
-# 1. Validar proxima.website.json (desde la raíz del storefront)
-npx proxima-templateizer validate .
+# 1. Validar proxima.website.json
+proxima validate mi-tienda
 
-# 2. Deploy (el "." es el directorio del manifiesto — obligatorio antes de flags)
-npx proxima-templateizer website-deploy .
+# 2. Deploy
+proxima deploy mi-tienda
 ```
 
 El CLI mostrará un resumen del deploy y pedirá confirmación antes de proceder:
@@ -182,32 +178,15 @@ Deploy to: tienda-deportes.proxima.app
 
 ```bash
 # Ver qué se enviaría sin hacer la llamada
-npx proxima-templateizer website-deploy . --dry-run
-
-# Forzar cambios breaking sin confirmación interactiva
-npx proxima-templateizer website-deploy . --force
-
-# Saltar la confirmación pre-deploy (útil en scripts o CI)
-npx proxima-templateizer website-deploy . --yes
-
-# Deploy de una sola página (el flag es repetible para varias)
-npx proxima-templateizer website-deploy . --page /contacto
-npx proxima-templateizer website-deploy . --page /blog --page /sobre-nosotros
-
-# Por resolver_kind (páginas dinámicas sin path fijo)
-npx proxima-templateizer website-deploy . --page product_detail
-
-# Sobreescribir credenciales (útil en CI)
-npx proxima-templateizer website-deploy . \
-  --api-url https://api.proxima.io \
-  --service-key pxa_live_... \
-  --domain tienda.proxima.app
-
-# Usar un archivo de credenciales específico
-npx proxima-templateizer website-deploy . --credentials ~/secrets/cliente-a.json
+proxima deploy mi-tienda --dry-run
+proxima deploy mi-tienda --force
+proxima deploy mi-tienda --yes
+proxima deploy mi-tienda --page /contacto
+proxima deploy mi-tienda --page product_detail
+proxima deploy mi-tienda --credentials ~/secrets/cliente-a.json
 ```
 
-> Si `npx proxima-templateizer` termina sin output, usar `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .`
+> Si `proxima` termina sin output, usar `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .`
 
 ### `--page` — deploy página por página
 
@@ -306,7 +285,7 @@ El `attribute_schema` del manifiesto define el formulario del Builder (`help_tex
 ```bash
 # Ciclo típico durante el desarrollo
 pnpm dev                          # verificar en local
-npx proxima-templateizer website-deploy .   # subir cambios al website del cliente
+proxima deploy mi-tienda   # subir cambios al website del cliente
 # → solo lo nuevo se aplica, el contenido del comercio no se toca
 ```
 
@@ -321,14 +300,14 @@ src/sections/BannerSection.astro
   ↕
 "key": "banner" en proxima.website.json
   ↕
-banner: BannerSection en src/sections/index.ts (SECTION_MAP)
+banner: BannerSection en SECTION_REGISTRY
 ```
 
 Si referencias un `section_type` en `scaffold_sections` que no está declarado en
 `section_types`, el CLI lo detecta **antes** de llamar a la API:
 
 ```bash
-npx proxima-templateizer website-deploy .
+proxima deploy mi-tienda
 
 # ✗ Invalid manifest at proxima.website.json:
 #   pages[0].scaffold_sections[2].section_type: section_type 'banner' not declared in section_types
@@ -346,7 +325,7 @@ pnpm dev
 # → Cada sección implementada debe estar en proxima.website.json
 
 # 3. Deploy
-npx proxima-templateizer website-deploy .
+proxima deploy mi-tienda
 # → El Builder ya muestra las secciones disponibles
 # → Las páginas tienen su estructura inicial lista
 
@@ -357,21 +336,19 @@ npx proxima-templateizer website-deploy .
 
 # 5. Añadir nueva sección al código
 # → Añadirla también en proxima.website.json
-npx proxima-templateizer website-deploy .   # solo crea lo nuevo, no toca el resto
+proxima deploy mi-tienda   # solo crea lo nuevo, no toca el resto
 ```
 
 ---
 
 ## Diferencia con el flujo de marketplace
 
-Si eventualmente quieres publicar este storefront como template reutilizable en el
-Proxima Marketplace (para que otros comercios lo instalen), ese es un flujo separado
-que usa `proxima.template.json`:
+Si quieres publicar el storefront como template en el Proxima Marketplace, usa el mismo
+`proxima.website.json` con bloque `marketplace_metadata`:
 
 ```bash
-npx proxima-templateizer validate .
-npx proxima-templateizer register .
-npx proxima-templateizer publish .
+proxima template:create mi-tienda
+proxima template:publish mi-tienda
 ```
 
 Ver [08 — Template Authoring](./08-template-authoring.md) para ese flujo.
@@ -385,7 +362,7 @@ En CI los prompts interactivos se deshabilitan automáticamente (cuando `CI=1`, 
 ```yaml
 # GitHub Actions
 - name: Deploy website
-  run: npx proxima-templateizer website-deploy .
+  run: proxima deploy mi-tienda
   env:
     PROXIMA_API_URL: ${{ secrets.PROXIMA_API_URL }}
     PROXIMA_SERVICE_KEY: ${{ secrets.PROXIMA_SERVICE_KEY }}
@@ -401,7 +378,7 @@ En CI los prompts interactivos se deshabilitan automáticamente (cuando `CI=1`, 
 - [ ] `proxima.website.json` existe en la raíz del proyecto
 - [ ] Cada sección en `src/sections/` tiene su entrada en `section_types`
 - [ ] Cada `section_type` en `scaffold_sections` existe en la lista de `section_types`
-- [ ] Los `key` en el manifiesto coinciden con los de `SECTION_MAP`
-- [ ] `npx proxima-templateizer website-deploy . --dry-run` muestra el payload esperado
+- [ ] Los `key` en el manifiesto coinciden con los de `SECTION_REGISTRY`
+- [ ] `proxima deploy mi-tienda --dry-run` muestra el payload esperado
 - [ ] Si hubo seed que recreó el website: service account con `website_id` actual (403 si no)
 - [ ] Para deployar solo algunas páginas: usar `--page /ruta` (repetible)

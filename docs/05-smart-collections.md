@@ -10,8 +10,7 @@ Una Smart Collection es una **query guardada** que el comercio configura en el b
 Cuando el storefront pide la composición, la API resuelve cada smart collection y
 embebe el resultado directamente en el `attributes` de la sección correspondiente.
 
-**El developer no hace nada especial** — el atributo `smart_collection_id` llega como
-un objeto con `type`, `items` y `meta`.
+El developer recibe datos en **`section.values.{name}`** (o como props explícitos desde `SectionRenderer`).
 
 ---
 
@@ -53,7 +52,7 @@ El caso más común. El comercio configura: categoría, marca, precio, stock, or
 ```astro
 ---
 // src/sections/ProductGridSection.astro
-const { products } = section.attributes;
+const { products } = section.values;
 // products: SmartCollectionResult con type="product_list"
 
 // Cada item del product_list:
@@ -115,7 +114,7 @@ const { product } = Astro.props;
 
 ```astro
 ---
-const { categories } = section.attributes;
+const { categories } = section.values;
 // Cada item: { id, slug, name, image_url, parent_id }
 ---
 <div class="category-grid">
@@ -134,7 +133,7 @@ const { categories } = section.attributes;
 
 ```astro
 ---
-const { brands } = section.attributes;
+const { brands } = section.values;
 // Cada item: { id, slug, name, logo_url }
 ---
 <div class="brand-grid">
@@ -155,7 +154,7 @@ const { brands } = section.attributes;
 
 ```astro
 ---
-const { featured } = section.attributes;
+const { featured } = section.values;
 // featured: { type: "banner", items: [{ entity_type, entity_id, cta_text, cta_href, image_override, ...entity_data }] }
 const banner = featured?.items?.[0];
 ---
@@ -177,7 +176,7 @@ Mezcla de productos, categorías y marcas elegidos manualmente:
 
 ```astro
 ---
-const { picks } = section.attributes;
+const { picks } = section.values;
 // picks.items: [{ type: "product" | "category" | "brand", ...entity_data }]
 ---
 {(picks?.items ?? []).map(item => (
@@ -203,7 +202,7 @@ paginación client-side con las funciones del SDK:
 // Esta sección recibe los primeros productos via smart collection
 // y los usuarios pueden paginar client-side sin perder el SSR inicial
 
-const { products } = section.attributes;
+const { products } = section.values;
 ---
 <EditableSection {section}>
   <div
@@ -264,7 +263,7 @@ Siempre manejar el caso de `null`/`undefined`:
 
 ```astro
 ---
-const { products } = section.attributes;
+const { products } = section.values;
 const hasProducts = products?.items?.length > 0;
 ---
 

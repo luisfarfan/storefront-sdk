@@ -13,11 +13,12 @@ Monorepo de paquetes SDK para storefronts y templates de Proxima.
 | [`@proxima-io/storefront-commerce`](packages/storefront-commerce) | Tipos de commerce compartidos (`ResolverKind`) y helpers | [README](packages/storefront-commerce/README.md) |
 | [`@proxima-io/storefront-builder-sdk`](packages/storefront-builder-sdk) | Bridge postMessage con el Builder visual + componentes Astro editables | [README](packages/storefront-builder-sdk/README.md) |
 
-### CLI (devDependency)
+### CLI global
 
 | Paquete | Descripción | README |
 |---------|-------------|--------|
-| [`@proxima-io/templateizer`](packages/templateizer) | **CLI** — deploy de websites, gestión de templates, `init`, `validate` | [README](packages/templateizer/README.md) |
+| [`@proxima-io/cli`](packages/cli) | CLI global `proxima` — deploy, validate, templates, **agent skills** | [README](packages/cli/README.md) |
+| [`@proxima-io/templateizer`](packages/templateizer) | Engine de deploy (usado por el CLI) | [README](packages/templateizer/README.md) |
 
 ### Internos del CLI — no instalar directamente
 
@@ -25,7 +26,7 @@ Usados solo por `templateizer`. No aparecen en el `package.json` de tu storefron
 
 | Paquete | Descripción | README |
 |---------|-------------|--------|
-| [`@proxima-io/template-schema`](packages/template-schema) | Schemas Zod y tipos para `proxima.website.json` y `proxima.template.json` | [README](packages/template-schema/README.md) |
+| [`@proxima-io/template-schema`](packages/template-schema) | Schemas Zod y tipos para `proxima.website.json` | [README](packages/template-schema/README.md) |
 | [`@proxima-io/template-registry-client`](packages/template-registry-client) | Cliente HTTP para el registro de templates de Proxima | [README](packages/template-registry-client/README.md) |
 
 ## Instalación según caso de uso
@@ -39,24 +40,12 @@ pnpm add @proxima-io/storefront-core @proxima-io/storefront-cms \
 pnpm add @proxima-io/storefront-core @proxima-io/storefront-cms \
          @proxima-io/storefront-commerce
 
-# CLI para deploy — siempre devDependency, nunca en producción
-pnpm add -D @proxima-io/templateizer
+# CLI global (recomendado)
+npm install -g @proxima-io/cli
 
-# template-schema y template-registry-client NO se instalan directamente
-# son dependencias internas del CLI
-```
-
-## Primeros pasos con el CLI
-
-```bash
-# Setup interactivo — crea .proxima/credentials.json
-npx proxima-templateizer init
-
-# Deploy de section types + páginas a tu website
-npx proxima-templateizer website-deploy
-
-# Ver todos los comandos disponibles
-npx proxima-templateizer
+proxima init
+proxima deploy
+proxima skills install    # Cursor + Claude agent workflows
 ```
 
 → Ver [docs/09-deploy.md](docs/09-deploy.md) para el flujo completo de deploy.
@@ -65,15 +54,17 @@ npx proxima-templateizer
 
 | Documento | Contenido |
 |-----------|-----------|
-| [01 — Mental model](docs/01-mental-model.md) | Jerarquía Website → Pages → Sections → Attributes |
+| [01 — Mental model](docs/01-mental-model.md) | Website, shell, manifiesto, overrides, smart collections |
 | [02 — Quick start](docs/02-quick-start.md) | Setup en 10 minutos |
-| [03 — Architecture](docs/03-architecture.md) | Organización de archivos de un storefront |
-| [04 — Sections & Attributes](docs/04-sections-and-attributes.md) | Tipos de sección y atributo |
-| [05 — Smart collections](docs/05-smart-collections.md) | Smart collections y placeholders |
-| [06 — Builder integration](docs/06-builder-integration.md) | Integración con el Builder visual |
+| [03 — Architecture](docs/03-architecture.md) | SiteLayout, SectionRenderer, catch-all |
+| [04 — Sections & Attributes](docs/04-sections-and-attributes.md) | Schema, values, attributesMeta, registry |
+| [05 — Smart collections](docs/05-smart-collections.md) | Tipos, placeholders, `auto:` |
+| [06 — Builder integration](docs/06-builder-integration.md) | EditableSection, preview bridge |
 | [07 — Commerce](docs/07-commerce.md) | Carrito, órdenes, checkout |
-| [08 — Template authoring](docs/08-template-authoring.md) | Publicar templates en el Marketplace |
-| [09 — Deploy](docs/09-deploy.md) | `website-deploy` — deploy a un website de cliente |
+| [07 — CMS attribute schema](docs/07-cms-attribute-schema.md) | Builder schema (help_text, options, arrays) |
+| [08 — Template authoring](docs/08-template-authoring.md) | Marketplace, `proxima.website.json` |
+| [09 — Deploy](docs/09-deploy.md) | `proxima deploy` |
+| [10 — Agent skills](docs/10-agent-skills.md) | `proxima skills install` |
 
 ## Stack
 

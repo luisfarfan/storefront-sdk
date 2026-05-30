@@ -1,209 +1,383 @@
 # 01 — Modelo mental de Proxima
 
-Antes de escribir una sola línea de código, entender este modelo te ahorrará horas de confusión.
+Antes de escribir código, entender este modelo te ahorra horas de confusión.
+La referencia viva del golden template es `apps/214store/proxima.website.json` en el monorepo de storefronts.
 
 ---
 
-## La jerarquía de datos
+## Tres capas — no confundirlas
+
+Proxima mezcla tres planos distintos. Cada uno tiene su fuente de verdad:
+
+| Capa | Fuente de verdad | Quién la edita | Qué define |
+|------|------------------|----------------|------------|
+| **Manifiesto (developer)** | `proxima.website.json` en el repo del storefront | Developer / agency | Tipos de sección, schemas del Builder, páginas, scaffolds, shell, placeholders de smart collections |
+| **Runtime CMS (merchant)** | Filas en la API (`Website`, `WebsitePage`, `WebsiteSection`, …) | Comercio vía Builder | Valores concretos de cada sección, smart collections configuradas, overrides |
+| **Catálogo (commerce)** | API de productos/categorías/marcas | Admin de catálogo | Datos de inventario — **no** son secciones CMS |
 
 ```
-Website
-  └── Pages  (rutas URL)
-        └── Sections  (bloques visuales)
-              └── Attributes  (datos editables)
-                    └── SmartCollections  (datos dinámicos auto-resueltos)
+proxima.website.json          API (website del comercio)           Storefront Astro
+─────────────────────         ──────────────────────────           ─────────────────
+section_types[]        ──deploy──► WebsiteSectionType[]     ──resolve──► attribute_schema (Builder)
+pages[] + scaffold     ──deploy──► WebsitePage[]                     composition JSON
+shell_sections[]       ──deploy──► WebsiteShellSection[]             section.values → props
+smart_collection_      ──instantiate► SmartCollection[]              SECTION_REGISTRY[type]
+  placeholders{}                (o auto al detectar catálogo)
+default_values         ──scaffold──► valores iniciales              componentes Astro
+shell_default_values   ──scaffold──► shell inicial
 ```
 
-Cada nivel tiene un rol específico:
-
-| Nivel | Qué es | Quién lo controla |
-|-------|--------|-------------------|
-| **Website** | Dominio, tema, capacidades, idioma, moneda | Admin del comercio |
-| **Page** | Una ruta URL con un `resolver_kind` | Admin del comercio (o template) |
-| **Section** | Bloque visual con un `type` | Admin del comercio (o template) |
-| **Attribute** | Campo editable de una sección | Admin del comercio (via builder) |
-| **SmartCollection** | Query dinámica (productos, categorías, etc.) | Admin del comercio |
+**Deploy (`proxima deploy`)** sincroniza schemas y estructura — **no** sube catálogo ni contenido editorial del home si la página ya tiene secciones del merchant.
 
 ---
 
 ## La frase clave
 
-> **Proxima no es un headless CMS donde tú pides los datos. Es un sistema donde la API ya resolvió todo — tú solo renderizas lo que recibes.**
+> **Proxima no es un headless CMS donde tú pides los datos página por página. Es un sistema donde la API ya resolvió la composición — tú renderizas lo que recibes.**
 
-Esta diferencia es fundamental. En un headless CMS tradicional:
+En un headless CMS tradicional:
 ```
 Storefront → pide página → pide productos → pide categorías → ensambla → renderiza
 ```
 
-En Proxima:
+En Proxima (contenido CMS):
 ```
-Storefront → pide composición → renderiza  (fin)
-```
-
-La API resuelve internamente las smart collections, los datos de la entidad principal,
-el SEO, el locale, la moneda — todo. El storefront recibe un JSON completo y lo renderiza.
-
----
-
-## Pages — Rutas y resolver_kinds
-
-Cada página tiene un `resolver_kind` que le dice al storefront qué tipo de página es:
-
-| `resolver_kind` | Ruta típica | `resolved_data` contiene |
-|-----------------|-------------|--------------------------|
-| `content_page` | `/`, `/nosotros`, `/contacto` | `null` |
-| `product_detail` | `/producto/{slug}` | El producto completo |
-| `category_detail` | `/categoria/{slug}` | La categoría + primeros productos |
-| `brand_detail` | `/marca/{slug}` | La marca + primeros productos |
-| `search` | `/buscar` | `null` (resultados son client-side) |
-| `product_list` | `/productos` | `null` |
-
-El storefront usa `resolver_kind` para saber cómo renderizar la página. El ejemplo más
-común es el **catch-all** (`[...path].astro`) que maneja todos los `resolver_kind`:
-
-```astro
----
-// src/pages/[...path].astro
-const { composition } = Astro.props; // ya resuelto en el layout
-
-switch (composition.resolver_kind) {
-  case 'product_detail':
-    // composition.resolved_data tiene el producto
-    break;
-  case 'search':
-    // No hay datos iniciales — la búsqueda es client-side
-    break;
-  default:
-    // content_page, category_detail, etc.
-}
----
+Storefront → fetchProximaComposition(path) → renderiza sections + shell
 ```
 
+La API resuelve smart collections embebidas en atributos, SEO, locale, moneda y `resolved_data` de entidades (producto, categoría, marca). El storefront recibe JSON completo para esa ruta.
+
+**Excepciones intencionales** (no van en la composición CMS):
+- Árbol de categorías del mega menú → `GET /storefront/categories/tree` (catálogo live)
+- PLP con filtros URL → `fetchProductListing()` lee `?brand=&price_min=` del browser
+- Carrito, auth, checkout → API routes thin + `@proxima-io/storefront-core`
+
 ---
 
-## Sections — Bloques visuales
+## Website — identidad y capacidades
 
-Una sección tiene:
-- `type` — el nombre del componente Astro que la renderiza (e.g. `"hero"`, `"product_grid"`)
-- `attributes` — un diccionario con los datos editables
-- `id` — para la integración con el builder
+Un **Website** es single-tenant: un dominio = un proceso Astro = un `PROXIMA_WEBSITE_DOMAIN`.
+
+| Campo | Rol |
+|-------|-----|
+| `domain` | Identidad — no hay detección de hostname en runtime |
+| `business_id` | Tenant de catálogo y órdenes |
+| `locale` / `currency` | Formato de precios y textos localizables |
+| `theme_tokens` | Colores de marca → CSS vars (`brandNeon`, `primary`, …) — nunca hardcodear en componentes |
+| `capabilities` | Perfil del sitio: `cart`, `checkout`, `buyer_auth`, `guest_checkout`, … |
+| `data_mode` | `live` o `fixtures` — en demo de template usa fixtures locales sin API |
+| `shell_sections` | Mapa `{ header, mega_menu, footer }` — **global**, no repetido por página |
+
+---
+
+## Shell vs secciones de página
+
+**Distinción crítica** que el modelo antiguo omitía:
+
+```
+Website
+├── shell_sections (global — SiteLayout)
+│     header      → logo, búsqueda, nav items
+│     mega_menu   → labels + category_overrides
+│     footer      → columnas, links, newsletter
+│
+└── pages[]
+      └── sections[] (por ruta — SectionRenderer en el catch-all)
+            hero_bento, product_grid, commerce_view, …
+```
+
+- **Shell**: se declara en `proxima.website.json` → `shell_sections[]` con slots (`key`: `header` | `mega_menu` | `footer`).
+- **Page sections**: viven en `pages[].scaffold_sections[]` y se instancian por página.
+- En runtime el storefront lee `website.shell_sections.header.values` en `SiteLayout.astro` — **no** como sección más del array de la página.
+- Los `section_types` con `"category": "shell"` son tipos reservados al layout global.
+
+Valores iniciales del shell: `shell_default_values{}` en el manifiesto (logo, search, nav, footer copy). El seed local (`fixtures/shell.json`) los materializa en dev; en producción el merchant los edita en Builder.
+
+---
+
+## Pages — rutas y `resolver_kind`
+
+Cada entrada en `pages[]` del manifiesto define una ruta lógica:
 
 ```json
 {
-  "id": 42,
-  "name": "Hero principal",
-  "type": "hero",
-  "order": 1,
-  "attributes": {
-    "headline": "Bienvenido a nuestra tienda",
-    "subheadline": "Los mejores productos",
-    "cta_text": "Ver catálogo",
-    "cta_href": { "url": "/productos", "label": "Ver catálogo" }
-  }
+  "resolver_kind": "content_page",
+  "path": "/",
+  "label": "Home",
+  "scaffold_sections": [
+    { "section_type": "hero_bento", "order": 1, "default_values": { "hero_products": "auto:featured_products" } }
+  ]
 }
 ```
 
-El storefront mapea `section.type` → componente Astro y le pasa los `attributes`.
+| `resolver_kind` | Ruta típica | Comportamiento |
+|-----------------|-------------|----------------|
+| `content_page` | `/`, `/contacto`, `/sobre-nosotros` | Solo secciones CMS; `resolved_data` null |
+| `product_list` | `/productos` | PLP — filtros en URL, fetch SDK aparte |
+| `product_detail` | `/producto/{slug}` | `resolved_data.product` + secciones opcionales |
+| `category_detail` | `/categoria/{slug}` | `resolved_data` categoría + secciones (ej. `product_grid`) |
+| `brand_detail` | `/marca/{slug}` | Igual con marca |
+| `buyer_search` | `/buscar` | Búsqueda (client-side o SSR según vista) |
+| `product_compare` | `/comparar` | Comparador de productos |
+| `cart` | `/carrito` | Vista commerce — suele usar `commerce_view` |
+| `checkout` | `/checkout` | Checkout auth o guest |
+| `buyer_login` | `/cuenta/login` | Auth |
+| `buyer_register` | `/cuenta/registro` | Registro |
+| `buyer_password_reset` | `/cuenta/restablecer` | Reset password |
+| `buyer_account` | `/cuenta` | Dashboard cuenta |
+| `order_list` | `/cuenta/pedidos` | Historial |
+| `order_detail` | `/cuenta/pedidos/{id}` | Detalle de orden |
+
+Solo `content_page` **requiere** `path` en el manifiesto. Los demás `resolver_kind` usan path fijo o parametrizado según convención del template.
+
+El storefront enruta con un catch-all (`[...path].astro`) que llama `resolveRequest()` y despacha a la vista según `page.resolver_kind` / composición.
 
 ---
 
-## Attributes — Los 9 tipos
+## Section types vs instancias de sección
 
-| Tipo | Qué almacena | Ejemplo de valor |
-|------|-------------|-----------------|
-| `text` | String simple | `"Bienvenido"` |
-| `rich_text` | HTML/markdown | `"<h2>Bienvenido</h2>"` |
-| `image` | URL de imagen | `"https://cdn.../banner.jpg"` |
-| `boolean` | `true` / `false` | `true` |
-| `number` | Número | `12` |
-| `link` | `{ url, label, target? }` | `{ url: "/productos", label: "Ver más" }` |
-| `object` | Objeto con campos anidados | `{ name: "Juan", role: "CEO" }` |
-| `array` | Lista de objetos | `[{ title: "FAQ 1", body: "..." }]` |
-| `smart_collection_id` | **Referencia resuelta** | Ver abajo ↓ |
+| Concepto | Dónde vive | Ejemplo |
+|----------|------------|---------|
+| **Section type** | `section_types[]` en manifiesto → `WebsiteSectionType` en API | `hero_bento`, `product_grid`, `mega_menu` |
+| **Instancia** | Fila `WebsiteSection` o `WebsiteShellSection` | Home tiene una instancia de `hero_bento` con sus `values` |
+| **Registry storefront** | `SectionRenderer.astro` → `SECTION_REGISTRY` | `hero_bento` → `HeroBento.astro` |
 
-### El tipo especial: `smart_collection_id`
+El `key` en `section_types[].key` debe coincidir **exactamente** con:
+1. El key en `SECTION_REGISTRY`
+2. El `section_type` en `scaffold_sections`
+3. El `type` que llega en la composición
 
-Este tipo almacena un ID de SmartCollection, pero cuando llega al storefront ya
-**está resuelto como datos** — no como un ID. La API lo resuelve internamente al
-generar la composición:
+---
+
+## Attributes — schema, values y meta
+
+Tres nombres que aparecen en código y docs:
+
+| Nombre | Capa | Qué es |
+|--------|------|--------|
+| **`attribute_schema`** | Manifiesto / `WebsiteSectionType` | Define campos del Builder: `name`, `label`, `type`, `order`, `config`, `options`, `localizable`, `default_value` |
+| **`values`** (runtime) | Instancia de sección | Lo que el merchant editó — llega como `section.values.*` al storefront |
+| **`attributesMeta`** | Builder preview | Mapa por campo para inline editing — `getSectionAttr(attributesMeta)` del builder-sdk |
+
+Convención del golden template:
+```ts
+interface Props {
+  cmsPreview?: boolean;
+  attributesMeta?: Record<string, unknown>;
+  heading?: string;  // ← mismo name que attribute_schema[].name
+}
+```
+
+En `SectionRenderer`: `heading={section.values.heading}` + `attributesMeta={section.attributesMeta}`.
+
+Doc detallada de tipos y `config`: [07-cms-attribute-schema.md](./07-cms-attribute-schema.md).
+
+### Tipos de atributo
+
+| Tipo | Almacena | Notas |
+|------|----------|-------|
+| `text` | string | `localizable: true` → valor por idioma |
+| `rich_text` | HTML/markdown | |
+| `image` | URL | |
+| `boolean` | bool | |
+| `number` | number | `config.min` / `config.max` |
+| `link` | `{ url, label, target?, is_external? }` | |
+| `select` | string (value de opción) | `options[]` con `value`, `label`, `description` |
+| `array` | lista de objetos | `config.schema.item_fields[]` — sub-formularios |
+| `smart_collection_id` | referencia → **resuelta en composición** | Ver abajo |
+
+Tipos dentro de `item_fields` de arrays: `text`, `select`, `boolean`, `product-picker`, etc.
+
+### `smart_collection_id` — referencia resuelta
+
+En el Builder el merchant elige o crea una Smart Collection. En la composición llega **ya resuelta**:
 
 ```json
 {
-  "attributes": {
-    "featured_products": {
+  "values": {
+    "hero_products": {
       "type": "product_list",
-      "items": [
-        {
-          "id": 1, "slug": "titan-mx-pro", "name": "Titan MX Pro",
-          "price": 299.90, "price_formatted": "S/ 299.90",
-          "image": "https://cdn.../titan.jpg",
-          "default_variant_id": 7
-        }
-      ],
+      "items": [{ "id": 1, "slug": "...", "name": "...", "price_formatted": "S/ 299.90" }],
       "meta": { "limit": 8, "returned": 6, "total": 42 }
     }
   }
 }
 ```
 
-El componente Astro solo hace `attributes.featured_products.items.map(...)` y renderiza.
-No hay ninguna llamada adicional a la API.
+El componente hace `(hero_products?.items ?? []).map(...)` — sin fetch extra.
 
 ---
 
-## SmartCollections — Los 6 tipos
+## Smart Collections
 
-| Tipo | Qué resuelve |
-|------|-------------|
-| `product_list` | Productos filtrados por categoría, marca, precio, stock, etc. |
-| `category_list` | Árbol de categorías con jerarquía |
-| `brand_list` | Marcas ordenadas por conteo de productos |
-| `banner` | Una entidad promocionada (producto, categoría o marca) |
-| `manual` | Lista curada a mano por el comercio |
-| `search_preview` | Productos que coinciden con un query fijo (editorial) |
+Query guardada que el comercio configura en Builder. Seis tipos:
 
-El comercio configura estas colecciones en el builder (qué filtros aplicar, cuántos items mostrar).
-El developer solo recibe el resultado y lo renderiza.
+| Tipo | Devuelve |
+|------|----------|
+| `product_list` | Productos filtrados/ordenados |
+| `category_list` | Categorías |
+| `brand_list` | Marcas |
+| `banner` | Una entidad promocionada |
+| `manual` | Lista curada a mano |
+| `search_preview` | Preview de búsqueda con query fijo |
+
+Doc de renderizado: [05-smart-collections.md](./05-smart-collections.md).
+
+### Placeholders del template (`smart_collection_placeholders`)
+
+En el manifiesto el developer declara colecciones **nombradas** para bootstrapping:
+
+```json
+"smart_collection_placeholders": {
+  "featured_products": {
+    "name": "Productos Destacados",
+    "type": "product_list",
+    "config": { "filter": "featured" },
+    "cache_ttl": 300
+  }
+}
+```
+
+Referencias con prefijo **`auto:`** en `default_values`:
+
+```json
+"default_values": { "hero_products": "auto:featured_products" }
+```
+
+Al instanciar template o detectar catálogo, la API crea/resuelve la Smart Collection real y enlaza el atributo. Idempotencia API-side.
 
 ---
 
-## El flujo completo de un request
+## Defaults — cuándo se aplican
+
+| Mecanismo | Dónde | Cuándo aplica |
+|-----------|-------|---------------|
+| `attribute_schema[].default_value` | Schema del tipo | Valor por defecto en formulario Builder para campos nuevos |
+| `scaffold_sections[].default_values` | Manifiesto por página | Solo al **primer scaffold** si la página no tiene secciones del merchant |
+| `shell_default_values{}` | Manifiesto global | Valores iniciales de slots shell al crear/scaffold website |
+| `"auto:…"` en default_values | Scaffold | Resuelve a smart collection placeholder |
+
+Si la página ya tiene contenido del merchant, deploy marca scaffold como `skipped` — no sobrescribe.
+
+---
+
+## Overrides — capa de presentación sobre datos vivos
+
+Overrides **no mutan catálogo**. Son arrays en `values` que el componente fusiona en frontmatter.
+
+### `category_overrides` (shell `mega_menu`)
+
+Menú construido desde `GET /storefront/categories/tree` + capa CMS:
+
+| Campo | Efecto |
+|-------|--------|
+| `category_slug` | Identifica categoría por slug exacto |
+| `badge` | Chip (OFERTA, NUEVO, …) |
+| `highlight` | Nombre en color de marca |
+| `label_override` | Nombre custom sin tocar catálogo |
+| `hidden` | Oculta del menú |
+
+### `product_overrides` (ej. `hero_bento`)
+
+Capa sobre items de una smart collection `product_list`:
+
+| Campo | Efecto |
+|-------|--------|
+| `product_id` | Producto de la colección (product-picker) |
+| `variant` | Tamaño de tile en grid bento (`flagship`, `standard`, …) |
+| `badge`, `theme`, `href`, … | Presentación por celda |
+
+Patrón: pre-computar merge en frontmatter Astro (nunca block-body en `.map()` del template).
+
+---
+
+## Sección `commerce_view`
+
+Tipo reutilizable para vistas de commerce (cart, checkout, login, …). Expone copy CMS-editable:
+
+- `eyebrow`, `heading`, `copy`, trust badges, umbrales (`low_stock_threshold` en PDP)
+- El componente Astro de la vista lee `section.values` — la lógica de carrito/auth sigue en SDK + API routes
+
+---
+
+## Catálogo vs CMS
+
+| | CMS (sections) | Catálogo |
+|--|----------------|----------|
+| **Qué** | Layout, copy, qué colección mostrar | Productos, SKUs, stock, categorías reales |
+| **Editado en** | Builder | Admin catálogo / import |
+| **En storefront** | `section.values`, smart collections resueltas | `resolved_data`, PLP fetch, category tree |
+
+El mega menú es el ejemplo canónico de **fusión**: árbol API + `category_overrides` CMS.
+
+---
+
+## Modos de datos: live vs fixtures
+
+| Modo | Cuándo | Fuente |
+|------|--------|--------|
+| **live** | Website real del merchant | API Proxima |
+| **fixtures** | Demo template (`PROXIMA_TEMPLATE_DEMO_DOMAIN`) o `PROXIMA_DATA_MODE=fixtures` | JSON en `src/fixtures/` |
+
+En fixtures, `loadFixtureComposition()` / `loadFixtureWebsite()` simulan la composición sin red. Commerce puede usar `@proxima-io/storefront-core/fixtures-commerce`.
+
+---
+
+## Flujo completo de un request (corregido)
 
 ```
-Browser → GET /categoria/zapatillas
+Browser → GET /categoria/gpus
 
 Storefront (Astro SSR):
   1. fetchProximaWebsite(domain)
-     → { id, business_id, locale: "es", currency: "PEN", capabilities, theme_tokens }
+     → { theme_tokens, capabilities, shell_sections: { header, mega_menu, footer }, pages[] }
 
-  2. fetchProximaComposition({ path: "/categoria/zapatillas" }, website)
+  2. fetchProximaComposition({ path }, website)
      → {
           resolver_kind: "category_detail",
-          resolved_data: {
-            category: { id: 5, name: "Zapatillas", slug: "zapatillas" },
-            products: [...]   ← primeros 24 productos de la categoría
-          },
-          sections: [
-            { type: "header", attributes: { logo: "...", nav_links: [...] } },
-            { type: "category_hero", attributes: { title: "Zapatillas", image: "..." } },
-            { type: "product_grid", attributes: {
-                products: {                    ← smart_collection ya resuelta
-                  type: "product_list",
-                  items: [...],
-                  meta: { limit: 24, total: 156 }
-                }
-              }
-            },
-            { type: "footer", attributes: { ... } }
+          resolved_data: { category: { slug, name, … }, … },
+          sections: [                    ← solo secciones DE PÁGINA
+            { type: "product_grid", values: { heading: "…", products: { type, items, meta } } }
           ],
-          seo: { meta_title: "Zapatillas | Mi Tienda", meta_description: "..." }
+          seo: { meta_title, meta_description, entity_name, … }
         }
 
-  3. Renderiza secciones en orden
-  4. Devuelve HTML al browser
+  3. SiteLayout renderiza shell_sections (header, mega_menu, footer)
+     + fetch category tree para mega_menu (catálogo)
+
+  4. SectionRenderer renderiza page.sections en orden
+
+  5. HTML al browser
 ```
 
-Nada más. Sin queries adicionales, sin REST calls extras desde el storefront.
+Header/footer **no** vienen en `composition.sections[]` — vienen en `website.shell_sections`.
+
+---
+
+## Deploy, seed e instantiate
+
+| Acción | Comando / herramienta | Resultado |
+|--------|----------------------|-----------|
+| Sync schemas + páginas vacías + shell | `proxima deploy` | Builder muestra campos correctos |
+| Website + catálogo + contenido demo | `seed_*_website.py` (proxima-api) | Datos de dev; luego deploy |
+| Publicar en marketplace | `proxima template:create` + `template:publish` | Template registry |
+| Crear website desde template | Admin / instantiate API | Copia structure, placeholders SC, shell defaults |
+
+Ver [09-deploy.md](./09-deploy.md) y skill `website-deploy` en el monorepo storefronts.
+
+---
+
+## Builder — empty state contract
+
+Secciones que pueden estar vacías:
+
+```ts
+const isEmpty = !heading && items.length === 0;
+if (!cmsPreview && isEmpty) return null;           // live: no ocupa espacio
+const showEmptyState = cmsPreview && isEmpty;      // Builder: placeholder seleccionable
+```
+
+Usar `BuilderEmptyState` del builder-sdk cuando `cmsPreview === true`.
 
 ---
 
@@ -215,17 +389,36 @@ Nada más. Sin queries adicionales, sin REST calls extras desde el storefront.
                     │  /storefront/cms/websites/   │
                     │  {id}/pages/composition      │
                     └──────────────┬──────────────┘
-                                   │ JSON (todo resuelto)
+                                   │ JSON (composición + shell en website)
                     ┌──────────────▼──────────────┐
                     │   storefront-core            │
                     │   fetchProximaComposition()  │
+                    │   fetchProductListing() …    │
                     └──────────────┬──────────────┘
                                    │
           ┌────────────────────────┼────────────────────────┐
           │                        │                        │
 ┌─────────▼──────┐      ┌──────────▼──────┐     ┌──────────▼──────┐
 │ storefront-cms │      │  Tu código Astro │     │  builder-sdk    │
-│ normalizeSec.. │      │  Section router  │     │  EditableSection│
-│ editable props │      │  Components      │     │  PostMessage    │
+│ normalizeSec.. │      │  SiteLayout      │     │  EditableSection│
+│                │      │  SectionRenderer │     │  EditableAttribute│
 └────────────────┘      └─────────────────┘     └─────────────────┘
+                                   │
+                    ┌──────────────▼──────────────┐
+                    │   @proxima-io/cli            │
+                    │   proxima deploy / init      │
+                    │   → @proxima-io/templateizer │
+                    └─────────────────────────────┘
 ```
+
+---
+
+## Siguiente lectura
+
+| Tema | Doc |
+|------|-----|
+| Schema de atributos (Builder) | [07-cms-attribute-schema.md](./07-cms-attribute-schema.md) |
+| Smart collections en componentes | [05-smart-collections.md](./05-smart-collections.md) |
+| Inline editing | [06-builder-integration.md](./06-builder-integration.md) |
+| Manifiesto y marketplace | [08-template-authoring.md](./08-template-authoring.md) |
+| Deploy | [09-deploy.md](./09-deploy.md) |

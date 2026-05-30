@@ -14,15 +14,17 @@ Se asume conocimiento de Astro (componentes, SSR, API routes, middleware) pero n
 
 | # | Documento | Qué aprenderás |
 |---|-----------|----------------|
-| 1 | [Modelo mental](./01-mental-model.md) | Cómo piensa Proxima: Website → Pages → Sections → Attributes → SmartCollections |
+| 1 | [Modelo mental](./01-mental-model.md) | Website, shell, manifiesto, attributes, overrides, smart collections |
 | 2 | [Quick start](./02-quick-start.md) | Proyecto funcionando en 10 minutos |
 | 3 | [Arquitectura de archivos](./03-architecture.md) | Estructura de carpetas, routing, section router |
-| 4 | [Sections y Attributes](./04-sections-and-attributes.md) | Definir secciones, los 9 tipos de atributos |
+| 4 | [Sections y Attributes](./04-sections-and-attributes.md) | Schema, values, SECTION_REGISTRY, shell, overrides |
 | 5 | [Smart Collections](./05-smart-collections.md) | Datos dinámicos: productos, categorías, marcas |
 | 6 | [Builder integration](./06-builder-integration.md) | EditableSection, EditableAttribute, preview bridge |
 | 7 | [Commerce](./07-commerce.md) | Auth, carrito, checkout, wishlist, búsqueda, órdenes |
 | 8 | [Template authoring](./08-template-authoring.md) | De storefront a template reutilizable en el marketplace |
-| 9 | [Deploy](./09-deploy.md) | Subir la estructura a la API para que el comercio pueda editar |
+| 9 | [Deploy](./09-deploy.md) | `proxima deploy` — subir manifiesto al Builder |
+| 10 | [Agent skills](./10-agent-skills.md) | Instalar skills de agente (`proxima skills install`) |
+| — | [CMS attribute schema](./07-cms-attribute-schema.md) | Schema Builder: help_text, options, overrides, arrays |
 
 ---
 
@@ -46,6 +48,7 @@ pnpm dev
 
 | Paquete | Propósito |
 |---------|-----------|
+| `@proxima-io/cli` | CLI global `proxima`: deploy, validate, init, template marketplace |
 | `@proxima-io/storefront-core` | HTTP client: websites, composición, auth, carrito, wishlist, búsqueda, analytics |
 | `@proxima-io/storefront-cms` | Normalización CMS, preview detection, props para builder |
 | `@proxima-io/storefront-builder-sdk` | Bridge iframe + componentes `EditableSection`, `EditableAttribute` |

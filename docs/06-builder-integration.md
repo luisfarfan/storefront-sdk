@@ -36,7 +36,34 @@ via `window.postMessage`.
 
 ---
 
-## Setup en BaseLayout
+## Convención golden template
+
+En storefronts actuales los componentes reciben **props** + **`attributesMeta`**, no el objeto `section` entero:
+
+```astro
+---
+import { getSectionAttr } from "@proxima-io/storefront-builder-sdk";
+import EditableAttribute from "@proxima-io/storefront-builder-sdk/EditableAttribute.astro";
+
+interface Props {
+  cmsPreview?: boolean;
+  attributesMeta?: Record<string, unknown>;
+  headline?: string;
+}
+const { key: attributeKey } = getSectionAttr(Astro.props.attributesMeta);
+---
+<EditableAttribute meta={attributeKey("headline")} value={Astro.props.headline}>
+  <h1>{Astro.props.headline}</h1>
+</EditableAttribute>
+```
+
+`SectionRenderer` pasa `section.values.headline` como prop y `section.attributesMeta` para el Builder.
+
+Los ejemplos siguientes usan `section` genérico por brevedad — en código real prefiere props + `getSectionAttr`.
+
+---
+
+## Setup en SiteLayout
 
 El `CmsPreviewBridge` debe estar en el layout base. Solo activa la comunicación
 cuando el storefront está en preview mode:
@@ -102,16 +129,18 @@ Envuelve un elemento editable. Al hacer click, el Builder abre el editor del cam
   <section class="hero">
 
     <EditableAttribute {section} attributeKey="headline">
-      <h1>{section.attributes.headline}</h1>
+      <h1>{section.values.headline}</h1>
     </EditableAttribute>
 
     <EditableAttribute {section} attributeKey="subheadline">
-      <p>{section.attributes.subheadline}</p>
+      <p>{section.values.subheadline}</p>
     </EditableAttribute>
 
   </section>
 </EditableSection>
 ```
+
+> En el golden template los componentes reciben props desde `SectionRenderer` (`heading={section.values.headline}`) y usan `getSectionAttr(attributesMeta)` — ver intro arriba.
 
 **Regla:** No envolver todo con `EditableAttribute` — solo los elementos que
 el comercio debe poder editar individualmente. Un elemento con `EditableAttribute`
@@ -127,7 +156,7 @@ Para atributos de tipo `array`, cada item tiene su propio editor.
 
 ```astro
 ---
-const { features = [] } = section.attributes;
+const { features = [] } = section.values ?? {};
 ---
 
 <EditableSection {section}>
@@ -151,7 +180,7 @@ const { features = [] } = section.attributes;
 | Componente | Props | Descripción |
 |-----------|-------|-------------|
 | `EditableSection` | `section: CmsSection` | La sección completa |
-| `EditableAttribute` | `section: CmsSection`, `attributeKey: string` | El nombre del atributo en `section.attributes` |
+| `EditableAttribute` | `section: CmsSection`, `attributeKey: string` | Nombre del campo en `section.values` |
 | `EditableItem` | `section: CmsSection`, `attributeKey: string`, `itemIndex: number` | Para arrays, el índice del item |
 
 ---
@@ -225,8 +254,8 @@ Para que el Builder pueda mostrar el overlay de edición en la imagen:
 ```astro
 <EditableAttribute {section} attributeKey="banner_image">
   <!-- La imagen debe estar DENTRO del EditableAttribute -->
-  {section.attributes.banner_image
-    ? <img src={section.attributes.banner_image} alt="Banner" />
+  {section.values.banner_image
+    ? <img src={section.values.banner_image} alt="Banner" />
     : <div class="placeholder">Sin imagen</div>
   }
 </EditableAttribute>
@@ -243,7 +272,7 @@ atributos vacíos:
 ---
 import { isCmsPreview } from '@proxima-io/storefront-cms';
 const isPreview = isCmsPreview(Astro.url);
-const { headline } = section.attributes;
+const { headline } = section.values ?? {};
 ---
 
 <EditableAttribute {section} attributeKey="headline">
@@ -348,7 +377,7 @@ funciona igual en campaign preview. Los `data-cms-editable` no se tocan.
 
 ## Checklist de Builder Integration
 
-- [ ] `CmsPreviewBridge` está en `BaseLayout.astro` con `enabled={isPreview}`
+- [ ] `CmsPreviewBridge` está en `SiteLayout.astro` (o layout base) con `enabled={isPreview}`
 - [ ] `isCmsPreview(Astro.url)` determina `isPreview`
 - [ ] Cada sección tiene `<EditableSection {section}>`
 - [ ] Cada campo editable tiene `<EditableAttribute {section} attributeKey="...">`

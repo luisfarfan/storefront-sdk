@@ -1,5 +1,12 @@
 # @proxima-io/cli
 
+## 0.2.2
+
+### Minor Changes
+
+- **`proxima skills list`** and **`proxima skills install`** — bundled agent skills for Cursor (`.cursor/skills/`) and Claude Code (`.claude/skills/`). Includes `website-deploy`, `wire-cms-sections`, `add-section`, `new-storefront-app`, `ecommerce-audit`, `seo`, and OpenSpec workflow skills.
+- SDK docs refreshed: mental model, architecture, sections, deploy, template authoring, agent skills guide (`docs/10-agent-skills.md`).
+
 ## 0.2.1
 
 ### Patch Changes
