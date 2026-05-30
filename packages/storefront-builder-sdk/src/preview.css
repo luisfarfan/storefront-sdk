@@ -212,6 +212,47 @@ body[data-cms-preview="true"][data-cms-preview-mode="edit"] [data-cms-attribute]
   animation: cms-attribute-pulse 900ms ease-out 1;
 }
 
+/* ——— WYSIWYG Inline Edit ——— */
+body[data-cms-preview="true"] [data-cms-attribute][data-cms-inline-editing="true"] {
+  outline: 2px solid rgba(59, 130, 246, 0.95) !important;
+  outline-offset: 2px;
+  background: rgba(219, 234, 254, 0.55) !important;
+  box-shadow:
+    0 0 0 6px rgba(59, 130, 246, 0.18),
+    0 12px 32px -8px rgba(59, 130, 246, 0.35) !important;
+  border-radius: 0.35rem;
+  cursor: text !important;
+  caret-color: rgb(37, 99, 235);
+  z-index: 95;
+}
+
+body[data-cms-preview="true"] [data-cms-attribute][data-cms-inline-editing="true"]:focus {
+  outline-color: rgb(37, 99, 235) !important;
+}
+
+body[data-cms-preview="true"] [data-cms-attribute][data-cms-inline-editing="true"]::after {
+  content: "Editando — Enter para confirmar · Esc para cancelar";
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  margin-bottom: 0.4rem;
+  padding: 0.32rem 0.62rem;
+  border-radius: 0.5rem;
+  background: rgb(37, 99, 235);
+  color: #f0f9ff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+  white-space: nowrap;
+  z-index: 96;
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+  pointer-events: none;
+}
+
+body[data-cms-preview="true"] [data-cms-attribute][data-cms-inline-editing="true"]::before {
+  content: none !important;
+}
+
 /* ——— Item ——— */
 body[data-cms-preview="true"][data-cms-preview-mode="edit"] [data-cms-item="true"] {
   position: relative;
