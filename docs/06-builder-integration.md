@@ -375,6 +375,92 @@ funciona igual en campaign preview. Los `data-cms-editable` no se tocan.
 
 ---
 
+## Cache de composiciones en el proceso Astro
+
+Cada storefront en modo live cachea internamente las respuestas de la API usando
+`websiteCache` y `compositionCache` — singletons por proceso Node.js exportados
+desde `@proxima-io/storefront-core`.
+
+```
+Request → resolver.ts → compositionCache.get(path) → hit: HTML inmediato
+                                                    → miss: fetch API → cache → HTML
+```
+
+TTLs por defecto:
+
+| Cache | TTL | Qué guarda |
+|-------|-----|-----------|
+| `websiteCache` | 5 min | Config del website (shell, theme, capabilities) |
+| `compositionCache` | 60 s | Composition de cada path (secciones CMS) |
+
+### Invalidación activa — POST /api/cache/invalidate
+
+La API de Proxima llama a este endpoint **fire-and-forget** después de cada save
+en el Builder. Sin él, el merchant tiene que esperar hasta que expire el TTL.
+
+Añadir en **cada storefront**:
+
+```ts
+// src/pages/api/cache/invalidate.ts
+import type { APIRoute } from "astro";
+import { handleCacheInvalidateWebhook } from "@proxima-io/storefront-core";
+
+export const POST: APIRoute = ({ request }) =>
+  handleCacheInvalidateWebhook(request, import.meta.env.PROXIMA_WEBHOOK_SECRET);
+```
+
+Y en el resolver (`src/lib/resolver.ts`), envolver los fetch calls:
+
+```ts
+import { compositionCache, websiteCache } from "@proxima-io/storefront-core";
+
+// En resolveRequest — website config
+const cached = !isBuilderPreview ? websiteCache.get(domain) : null;
+if (cached) {
+  apiWebsite = cached;
+} else {
+  apiWebsite = await fetchProximaWebsite({ baseUrl, domain, host: domain, serviceKey });
+  if (!isBuilderPreview) websiteCache.set(domain, apiWebsite);
+}
+
+// En resolveRequest — composition
+let cacheHit = false;
+const cachedComp = !isBuilderPreview ? compositionCache.get(path) : null;
+if (cachedComp) {
+  composition = cachedComp;
+  cacheHit = true;
+} else {
+  composition = await fetchProximaComposition({ baseUrl, domain, path, serviceKey }, apiWebsite);
+  if (!isBuilderPreview) compositionCache.set(path, composition);
+}
+```
+
+### Scopes del webhook
+
+| `scope` | `path` | Efecto |
+|---------|--------|--------|
+| `"composition"` | `/ruta` | Flush solo esa página |
+| `"website"` | — | Flush website config + todas las composiciones |
+| `"all"` | — | Flush todo |
+
+### Regla crítica: Builder preview siempre fresco
+
+El cache se salta cuando `isBuilderPreview === true` (parámetro `cms_preview=1`
+o `builder_website_id` en la URL). El merchant debe ver sus cambios al instante
+— nunca una versión cacheada.
+
+### Env var requerida
+
+```env
+# Debe coincidir con STOREFRONT_WEBHOOK_SECRET en la API de Proxima
+PROXIMA_WEBHOOK_SECRET=your-secret-here
+```
+
+Si la variable no está definida, el endpoint acepta el webhook sin autenticación
+(seguro en dev detrás de firewall; **siempre configurar en prod**).
+
+---
+
 ## Checklist de Builder Integration
 
 - [ ] `CmsPreviewBridge` está en `SiteLayout.astro` (o layout base) con `enabled={isPreview}`
@@ -386,3 +472,6 @@ funciona igual en campaign preview. Los `data-cms-editable` no se tocan.
 - [ ] Campaign preview: `variantId` + `previewToken` se pasan a `fetchProximaComposition`
 - [ ] `variant_id` sin `preview_token` falla cerrado (error UI, no silent fallback)
 - [ ] URLs con `preview_token` tienen `Cache-Control: no-store` y `noindex`
+- [ ] `POST /api/cache/invalidate` existe en el storefront (usa `handleCacheInvalidateWebhook`)
+- [ ] `compositionCache` y `websiteCache` envuelven los fetch calls en `resolver.ts`
+- [ ] `PROXIMA_WEBHOOK_SECRET` configurado en prod
