@@ -16,6 +16,7 @@ export type CmsEditorKind =
   | "link"
   | "number"
   | "boolean"
+  | "datetime"
   | "collection"
   | "list"
   | "object"
@@ -30,6 +31,7 @@ const EDITOR_KIND_LABELS: Record<CmsEditorKind, string> = {
   link: "Enlace",
   number: "Número",
   boolean: "Sí/No",
+  datetime: "Fecha/hora",
   collection: "Colección",
   list: "Lista",
   object: "Objeto",
@@ -62,6 +64,9 @@ export function resolveEditorKind(type: string | null | undefined, ui?: string |
   }
   if (t === "boolean") {
     return "boolean";
+  }
+  if (t === "datetime") {
+    return "datetime";
   }
   if (t === "text" || t === "textarea" || t === "slug" || t === "rich_text") {
     return "text";

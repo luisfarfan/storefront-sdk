@@ -312,3 +312,9 @@ Para tareas específicas, consulta los skills en `.claude/skills/`:
 
 ### Analytics
 - `analytics.init(config)` + `analytics.track(type, payload)` — cliente singleton con batch/flush
+
+### Campañas y countdown
+- `resolveCampaignTarget(attributesMeta, attrName)` → `string | null` — extrae el ISO UTC de un attr `datetime` desde `attributesMeta`
+- `resolveSmartCollectionTarget(sc)` → `string | null` — extrae el `countdown_target_at` del bloque `schedule` de una SC resuelta
+- `getCampaignCountdown(targetAt)` → `CampaignCountdownState` — snapshot `{ days, hours, minutes, seconds, expired }` SSR-safe (sin timers)
+- `createCampaignTicker(targetAt, onTick)` → `() => void` — ticker client-side (1s), devuelve `stop()`; usar solo en `<script>` del componente

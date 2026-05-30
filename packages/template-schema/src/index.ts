@@ -9,6 +9,7 @@ export const attributeTypes = [
   "image",
   "boolean",
   "number",
+  "datetime",
   "link",
   "object",
   "array",

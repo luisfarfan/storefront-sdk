@@ -275,6 +275,113 @@ const hasProducts = products?.items?.length > 0;
 
 ---
 
+## Smart Collections con campaña (schedule + countdown)
+
+Una SC puede tener un scheduling de datos (`active_from` / `active_until`) y un target de countdown configurable. Cuando la API resuelve la composición, embebe un bloque `schedule` en `attributes_meta` junto a los datos de la colección.
+
+### Shape del bloque `schedule`
+
+```ts
+interface ResolvedSmartCollectionInfo {
+  collection: {
+    id: number;
+    name: string;
+    type: string;
+    is_active: boolean;
+    active_from: string | null;   // ISO UTC — cuándo empieza a servir datos
+    active_until: string | null;  // ISO UTC — cuándo deja de servir datos
+    config: {
+      display?: {
+        countdown_target_at?: string;  // ISO UTC — override explícito del target
+      };
+    };
+  };
+  schedule: {
+    countdown_target_at: string | null;  // target resuelto (config.display > active_until)
+    countdown_target_source:
+      | "config.display.countdown_target_at"
+      | "active_until"
+      | null;
+  };
+  meta: {
+    inactive: boolean;
+    inactive_reason: "disabled" | "before_start" | "after_end" | null;
+  };
+}
+```
+
+### Leer el countdown desde una SC en el componente
+
+```astro
+---
+import {
+  resolveSmartCollectionTarget,
+  getCampaignCountdown,
+} from "@proxima-io/storefront-core";
+
+// props.products viene de section.values (ya resuelto por la API)
+// El attributesMeta contiene el bloque schedule de la SC
+const sc = props.attributesMeta?.["products"];   // nombre del atributo SC
+const targetAt = resolveSmartCollectionTarget(sc);
+const snap = targetAt ? getCampaignCountdown(targetAt) : null;
+---
+
+{snap && !snap.expired && (
+  <div id="sc-countdown" data-target={targetAt}>
+    {/* El storefront implementa su UI */}
+  </div>
+)}
+```
+
+### Sección inactiva (`meta.inactive`)
+
+Si la SC llega con `meta.inactive = true`, no hay productos — la colección está fuera de su ventana o desactivada:
+
+```astro
+---
+const sc = props.attributesMeta?.["products"];
+const isInactive = sc?.meta?.inactive === true;
+const inactiveReason = sc?.meta?.inactive_reason; // "before_start" | "after_end" | "disabled"
+
+if (!props.cmsPreview && isInactive) return null;
+---
+
+{props.cmsPreview && isInactive && (
+  <div class="empty-state">
+    Campaña {inactiveReason === "after_end" ? "finalizada" : "no activa"}
+  </div>
+)}
+```
+
+### Ticker client-side para SC
+
+Igual que para atributos `datetime` — usar `createCampaignTicker`:
+
+```astro
+<script>
+  import { createCampaignTicker } from "@proxima-io/storefront-core";
+
+  const el = document.getElementById("sc-countdown");
+  const targetAt = el?.dataset.target;
+  if (!el || !targetAt) return;
+
+  const stop = createCampaignTicker(targetAt, (state) => {
+    if (state.expired) { stop(); el.remove(); return; }
+    // actualizar UI
+  });
+</script>
+```
+
+### Resumen de helpers
+
+| Función | Para qué |
+|---------|----------|
+| `resolveSmartCollectionTarget(sc)` | Extrae `countdown_target_at` del `schedule` de una SC resuelta |
+| `getCampaignCountdown(targetAt)` | Snapshot `{ days, hours, minutes, seconds, expired }` (SSR-safe) |
+| `createCampaignTicker(targetAt, onTick)` | Ticker client-side, devuelve `stop()` |
+
+---
+
 ## Checklist para una sección con Smart Collection
 
 - [ ] El atributo usa `type: "smart_collection_id"` en el schema
@@ -282,3 +389,4 @@ const hasProducts = products?.items?.length > 0;
 - [ ] El componente accede a `attributes.mi_atributo.items` (no al ID)
 - [ ] Hay un fallback para cuando `items` está vacío o el atributo es `null`
 - [ ] Si hay paginación, usa `fetchCategoryProducts` / `fetchBrandProducts` / `fetchStorefrontProducts`
+- [ ] Si la SC puede tener campaña: leer `resolveSmartCollectionTarget(sc)` y manejar `meta.inactive`

@@ -46,6 +46,19 @@ const themeVars = buildCssVars(website.theme_tokens as Record<string, string>);
       body { margin: 0; font-family: system-ui, sans-serif; }
       img { max-width: 100%; height: auto; }
     </style>
+
+    <!--
+      Datos del website para scripts client-side.
+      Usamos data-attributes en lugar de window globals para evitar
+      contaminación del scope global y seguir el patrón idiomático de Astro.
+    -->
+    <meta
+      id="proxima-config"
+      data-website-id={website.id}
+      data-business-id={website.business_id}
+      data-locale={website.locale}
+      data-currency={(website as any).currency ?? 'USD'}
+    />
   </head>
   <body>
     <!-- Builder bridge: solo activo en preview mode, noop en producción -->
@@ -56,20 +69,36 @@ const themeVars = buildCssVars(website.theme_tokens as Record<string, string>);
     <!-- Carrito lateral -->
     <CartDrawer />
 
-    <!-- Variables globales para scripts client-side -->
-    <script
-      define:vars={{
-        businessId: website.business_id,
-        currency: (website as any).currency ?? 'USD',
-        apiUrl: import.meta.env.PUBLIC_PROXIMA_API_URL,
-        locale: website.locale,
-      }}
-    >
-      window.__PROXIMA_BUSINESS_ID__ = businessId;
-      window.__PROXIMA_CURRENCY__ = currency;
+    <!--
+      Inicialización client-side: analytics + globals de carrito.
 
-      // Analytics
-      import(apiUrl + '/static/analytics.js').catch(() => {});
+      Este script es type="module" (Astro lo bundlea automáticamente),
+      por lo que es DIFERIDO — nunca bloquea el parsing del HTML ni el
+      primer render, sin impacto en SEO ni en LCP.
+
+      Los datos del website se leen desde #proxima-config (definido en <head>)
+      para evitar un script inline síncrono con define:vars.
+
+      apiUrl usa import.meta.env.PUBLIC_PROXIMA_API_URL directamente —
+      Astro reemplaza las variables PUBLIC_* en build time en scripts de módulo,
+      sin necesidad de pasarlas por window.
+    -->
+    <script>
+      import { analytics } from '@proxima-io/storefront-core';
+
+      const cfg = document.getElementById('proxima-config')!;
+      const { websiteId, businessId, locale, currency } = cfg.dataset;
+
+      // Globals para componentes client-side que los necesiten (ej. CartDrawer)
+      (window as any).__PROXIMA_BUSINESS_ID__ = businessId;
+      (window as any).__PROXIMA_CURRENCY__    = currency;
+
+      analytics.init({
+        apiUrl:     import.meta.env.PUBLIC_PROXIMA_API_URL,
+        websiteId:  websiteId!,
+        businessId: businessId!,
+        locale,
+      });
     </script>
   </body>
 </html>

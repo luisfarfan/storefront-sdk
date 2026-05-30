@@ -15,6 +15,11 @@ export type CmsAttributeMeta = {
   type?: string | null;
   order?: number | null;
   localizable?: boolean | null;
+  /** Present on datetime-type attributes — carries countdown target resolved by the API. */
+  schedule?: {
+    countdown_target_at: string | null;
+    countdown_target_source: "section_attribute" | "config.display.countdown_target_at" | "active_until" | null;
+  } | null;
 };
 
 export type CmsSectionMeta = {
