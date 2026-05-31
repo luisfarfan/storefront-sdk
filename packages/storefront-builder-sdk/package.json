@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/storefront-builder-sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Proxima Builder iframe bridge and editable component wrappers for Astro storefronts.",
   "license": "MIT",
