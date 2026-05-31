@@ -713,6 +713,96 @@ export async function notifyIndexNow(
   }
 }
 
+/**
+ * Public business profile — tenant-wide data the merchant edits once via
+ * PUT /admin/store/presence and that ALL of their websites render (footer,
+ * contact widgets, JSON-LD).
+ *
+ * Replaces the per-website hardcoded values (social links, legal URLs,
+ * showroom address, etc.) that used to live in each storefront's footer.
+ */
+export interface StorefrontBusinessProfile {
+  business_id: string;
+  name: string;
+  slug: string;
+  logo_url: string | null;
+  tagline: string | null;
+  currency_code: string;
+  timezone: string;
+  contact: {
+    email: string | null;
+    support_email: string | null;
+    support_phone: string | null;
+    whatsapp: string | null;
+    /** Pre-built `https://wa.me/{digits}` link derived from `whatsapp`. */
+    whatsapp_url: string | null;
+  };
+  social: {
+    instagram: string | null;
+    facebook: string | null;
+    tiktok: string | null;
+    youtube: string | null;
+    twitter: string | null;
+    linkedin: string | null;
+  };
+  legal: {
+    terms_url: string | null;
+    privacy_url: string | null;
+    /** Peru-specific "Libro de Reclamaciones" URL. */
+    complaints_book_url: string | null;
+  };
+  presence_mode: "physical" | "virtual" | "both";
+  primary_location: StorefrontBusinessLocation | null;
+  locations: StorefrontBusinessLocation[];
+}
+
+export interface StorefrontBusinessLocation {
+  id: string | null;
+  kind: "store" | "pickup_point" | "showroom";
+  label: string;
+  is_primary: boolean;
+  address_line: string;
+  ubigeo_code: string | null;
+  reference: string | null;
+  phone: string | null;
+  hours_text: string | null;
+  show_on_website: boolean;
+  is_active: boolean;
+  sort_order: number;
+  warehouse_id: number | null;
+  ubigeo: {
+    code: string;
+    department: string;
+    province: string;
+    district: string;
+    full_name: string;
+  } | null;
+}
+
+/**
+ * Fetch the public business profile for a tenant. Call this once per request
+ * and cache the result on `Astro.locals` so the footer (and any other
+ * profile-aware component) reads from memory, not over the wire.
+ *
+ * @example
+ * const profile = await fetchBusinessProfile(
+ *   { baseUrl: env.apiUrl, serviceKey: env.serviceKey },
+ *   website.business_id
+ * );
+ */
+export async function fetchBusinessProfile(
+  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
+  businessId: string,
+): Promise<StorefrontBusinessProfile> {
+  const url = new URL("/api/v1/storefront/business/profile", config.baseUrl);
+  url.searchParams.set("business_id", businessId);
+  const headers: Record<string, string> = {};
+  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error(`Business profile fetch failed: ${response.status}`);
+  return response.json();
+}
+
 /** List all websites for a service-key authenticated caller. Useful for build-time scripts. */
 export async function fetchProximaWebsiteList(config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">): Promise<ProximaWebsiteResponse[]> {
   const url = new URL("/api/v1/storefront/cms/websites", config.baseUrl);
