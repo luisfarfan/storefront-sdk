@@ -3,6 +3,8 @@
 Cómo subir la estructura de tu storefront a la API de Proxima para que el comercio
 pueda empezar a editar su website desde el Builder.
 
+> **Doc canónico end-to-end** del lifecycle del template (deploy + template:publish + instantiate, schema completo del manifest, storage map, reglas de `default_values`): **`proxima-api/docs/cms-template-lifecycle.md`**. Esta doc cubre solo el flujo de `proxima deploy` desde la perspectiva del developer.
+
 ---
 
 ## El problema que resuelve
@@ -29,6 +31,8 @@ no sabe qué campos tiene cada sección.
 | Marketplace (registry) | mismo manifiesto + `marketplace_metadata` | `proxima template:create` / `template:publish` |
 
 Un solo archivo **`proxima.website.json`** por app Astro. Incluye `section_types`, `pages`, `shell_sections`, `smart_collection_placeholders`, `shell_default_values`.
+
+> **Qué envía el CLI a la API:** solo `section_types`, `pages` y `shell_sections`. Los campos `smart_collection_placeholders` y `shell_default_values` los consume el templateizer internamente (marketplace templates / auto-scaffold); **no** forman parte del payload `POST /deploy`.
 
 ---
 

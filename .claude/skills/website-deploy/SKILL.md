@@ -11,6 +11,8 @@ description: >
 
 Guía completa del comando `templateizer website-deploy` y el endpoint subyacente.
 
+> **Para entender el lifecycle completo** (deploy + template:publish + instantiate, schema del manifest, storage map): **`proxima-api/docs/cms-template-lifecycle.md`**. Esta skill cubre solo el flujo de `proxima deploy`.
+
 ---
 
 ## ¿Qué hace el deploy?
@@ -62,29 +64,31 @@ El website debe existir en el admin de Proxima. El deploy no lo crea (salvo scri
 
 ```bash
 # Desde la raíz del proyecto storefront (donde está proxima.website.json)
-cd <proyecto>
 
 # Preview — ver el payload sin llamar la API
-node node_modules/@proxima-io/templateizer/dist/index.js website-deploy . --dry-run
-# o: npx proxima-templateizer website-deploy .
+proxima deploy --dry-run
+# o: node node_modules/@proxima-io/templateizer/dist/index.js website-deploy . --dry-run
 
 # Deploy estándar (todas las páginas)
-npx proxima-templateizer website-deploy .
+proxima deploy
 
 # En proxima-storefronts/apps/214store (recomendado — salida visible):
 npm run manifest:deploy
 
-# Breaking changes — el target "." va ANTES de los flags
-npx proxima-templateizer website-deploy . --force
+# Breaking changes
+proxima deploy --force
 
-# Overrides para CI/CD
-npx proxima-templateizer website-deploy . \
+# Sin prompts (CI/CD)
+proxima deploy --yes
+
+# Overrides para CI/CD (sin depender de .env)
+proxima deploy \
   --api-url https://api.proxima.io \
   --domain mitienda.proxima.app \
   --service-key pxa_live_xxx
 ```
 
-> Si `npx proxima-templateizer website-deploy` termina en silencio sin output, invocar con `node …/templateizer/dist/index.js website-deploy .` o el script `manifest:deploy` del app.
+> Si `proxima` termina en silencio sin output, invocar con `node node_modules/@proxima-io/templateizer/dist/index.js website-deploy .` como fallback.
 
 ### Deploy página por página — flag `--page`
 
@@ -92,16 +96,16 @@ El flag `--page <path>` filtra el array `pages` antes de enviarlo a la API. Los 
 
 ```bash
 # Una sola página (por path)
-npx proxima-templateizer website-deploy . --page /contacto
+proxima deploy --page /contacto
 
 # Por resolver_kind (páginas dinámicas sin path fijo)
-npx proxima-templateizer website-deploy . --page product_detail
+proxima deploy --page product_detail
 
 # Varias páginas
-npx proxima-templateizer website-deploy . --page /blog --page /contacto
+proxima deploy --page /blog --page /contacto
 
 # Dry-run para verificar el payload antes
-npx proxima-templateizer website-deploy . --page /sobre-nosotros --dry-run
+proxima deploy --page /sobre-nosotros --dry-run
 ```
 
 Si el path no coincide con ninguna entrada en el manifiesto, el CLI imprime error con las disponibles:
@@ -415,7 +419,7 @@ El CLI valida esto antes de hacer la llamada:
 2. No puede haber dos section types con el mismo `key`
 3. Cada `section_type` en `scaffold_sections` debe existir en `section_types`
 4. `content_page` requiere `path`
-5. Los tipos de atributos deben ser uno de: `text | rich_text | image | boolean | number | link | object | array | smart_collection_id`
+5. Los tipos de atributos deben ser uno de: `text | rich_text | image | boolean | number | datetime | link | object | array | smart_collection_id`
 
 Si falla la validación, el CLI imprime el error y sale con code 1 sin llamar a la API.
 
@@ -425,9 +429,9 @@ Si falla la validación, el CLI imprime el error y sale con code 1 sin llamar a 
 
 ```bash
 # Ciclo de desarrollo
-pnpm dev                          # servidor local
+pnpm dev                  # servidor local
 # editar proxima.website.json
-npx proxima-templateizer website-deploy .   # subir cambios
+proxima deploy            # subir cambios
 # solo lo nuevo se aplica
 # el contenido del comercio nunca se toca
 ```

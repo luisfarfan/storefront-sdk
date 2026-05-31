@@ -40,7 +40,10 @@ proxima-storefront-sdk/
 │   ├── 06-builder-integration.md
 │   ├── 07-commerce.md
 │   ├── 08-template-authoring.md
-│   └── 09-deploy.md              # LEER para entender website-deploy
+│   ├── 09-deploy.md              # LEER para entender website-deploy
+│   ├── 10-catalog-source-pattern.md    # Patrón Astro.locals.catalogSource (CRÍTICO para live mode)
+│   ├── 11-attribute-types-runtime.md   # Cada tipo: declaración, storage, runtime, render
+│   └── 12-smart-collections.md         # SCs end-to-end: placeholders, scaffold, envelope
 └── openspec/                     # Propuestas de cambio en formato OpenSpec
 ```
 

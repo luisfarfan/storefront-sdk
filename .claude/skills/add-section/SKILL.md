@@ -13,9 +13,9 @@ Una "sección" en Proxima vive en tres lugares simultáneamente. Los tres deben 
 sincronizados:
 
 ```
-1. proxima.website.json   — define el contrato de datos (qué atributos tiene)
-2. src/sections/          — implementa el renderizado (componente Astro)
-3. src/sections/index.ts  — registra el componente en SECTION_MAP
+1. proxima.website.json                            — contrato de datos (atributos editables)
+2. src/components/sections/                        — componente Astro (renderizado)
+3. src/components/sections/SectionRenderer.astro   — SECTION_REGISTRY + bloque de render
 ```
 
 Si alguno de los tres falta, la sección no funciona correctamente.
@@ -90,9 +90,12 @@ Solo `name`, `label`, `type` y `order` son obligatorios. El resto es opcional.
 | `boolean` | Toggle / checkbox | — |
 | `number` | Número | `{ "min": 1, "max": 10 }` |
 | `link` | URL + label | — |
+| `datetime` | Fecha/hora de campaña (countdown target) | — siempre `localizable: false` |
 | `object` | Sub-objeto con campos propios | `{ "fields": [...] }` |
 | `array` | Lista de items repetibles | `{ "item_fields": [{ "name": "...", "type": "..." }] }` |
 | `smart_collection_id` | Query dinámica (productos, categorías...) | `{ "allowed_smart_collection_types": ["product_list"] }` |
+
+> **Tipos Builder-only (no válidos en deploy):** `select` y `product-picker` solo pueden usarse dentro de `config.schema.item_fields` (campos anidados en `object`/`array`). Usarlos como tipo raíz en `attribute_schema` causa `422`.
 
 ### `help_text` y `options` (Builder)
 
@@ -203,91 +206,105 @@ Si la nueva sección debe aparecer en el scaffold de alguna página, añadirla a
 
 ## Paso 4 — Crear el componente Astro
 
-Crear el archivo en `src/sections/`:
+Crear el archivo en `src/components/sections/` (o `src/sections/` según la convención del storefront):
 
 ```astro
-<!-- src/sections/PromoBannerSection.astro -->
+<!-- src/components/sections/PromoBanner.astro -->
 ---
-interface Props {
-  section: {
-    type: string;
-    attributes: {
-      image?:    { url: string; alt?: string };
-      title?:    string;
-      subtitle?: string;
-      cta?:      { label: string; url: string };
-      bg_color?: string;
-    };
-  };
-  website?: any;
-  composition?: any;
+import EditableAttribute from '@proxima-io/storefront-builder-sdk/EditableAttribute.astro';
+
+export interface PromoBannerProps {
+  image?:    { url: string; alt?: string };
+  title?:    string;
+  subtitle?: string;
+  cta?:      { label: string; url: string };
+  bg_color?: string;
+  // Siempre incluir para el Builder:
+  cmsPreview?:     boolean;
+  attributesMeta?: Record<string, any>;
 }
 
-const { section } = Astro.props;
-const { image, title, subtitle, cta, bg_color } = section.attributes;
+const props = Astro.props as PromoBannerProps;
+const cmsPreview = Boolean(props.cmsPreview);
 ---
 
-<section
-  class="promo-banner"
-  style={bg_color ? `background-color: ${bg_color}` : undefined}
->
-  {image && (
-    <img src={image.url} alt={image.alt ?? title ?? ''} />
+<section class="promo-banner" style={props.bg_color ? `background-color:${props.bg_color}` : ''}>
+  {props.image && (
+    <EditableAttribute enabled={cmsPreview} attributeKey="image" label="Imagen" type="image">
+      <img src={props.image.url} alt={props.image.alt ?? props.title ?? ''} />
+    </EditableAttribute>
   )}
   <div class="promo-banner__content">
-    {title && <h2>{title}</h2>}
-    {subtitle && <p>{subtitle}</p>}
-    {cta && (
-      <a href={cta.url} class="promo-banner__cta">
-        {cta.label}
-      </a>
+    {props.title && (
+      <EditableAttribute enabled={cmsPreview} attributeKey="title" label="Título" type="text">
+        <h2>{props.title}</h2>
+      </EditableAttribute>
     )}
+    {props.subtitle && <p>{props.subtitle}</p>}
+    {props.cta && <a href={props.cta.url} class="promo-banner__cta">{props.cta.label}</a>}
   </div>
 </section>
 ```
 
-**Convenciones para el componente:**
+**Convenciones del componente:**
 
-- El componente recibe `section`, `website` y `composition` como props
-- `section.attributes` contiene los valores editados por el comercio en el Builder
-- Todos los atributos son opcionales en TypeScript (el comercio puede no haberlos llenado)
-- Para `image`, el valor es `{ url: string; alt?: string }`
-- Para `link`, el valor es `{ label: string; url: string }`
-- Para `smart_collection_id`, la API ya resolvió la colección — los datos resueltos
-  están en `composition.resolved_data` o en los atributos del section dependiendo del tipo
+- Props **individuales** por atributo (no `section.values` como objeto)
+- `cmsPreview` y `attributesMeta` — siempre presentes; los pasa `SectionRenderer.astro`
+- `EditableAttribute` — envuelve campos editables para que el Builder pueda seleccionarlos
+- Todos los props son opcionales — el comercio puede no haberlos llenado
+- Para `smart_collection_id`: la API ya resolvió la colección como envelope con `items`, `meta`, `schedule`
 
 ---
 
-## Paso 5 — Registrar en SECTION_MAP
+## Paso 5 — Registrar en SectionRenderer.astro
 
-Abrir `src/sections/index.ts` y añadir:
+Abrir `src/components/sections/SectionRenderer.astro` y:
 
-```ts
-import HeroSection      from './HeroSection.astro';
-import HeaderSection    from './HeaderSection.astro';
-import FooterSection    from './FooterSection.astro';
-import PromoBannerSection from './PromoBannerSection.astro';  // ← nueva
-
-export const SECTION_MAP: Record<string, any> = {
-  hero:         HeroSection,
-  header:       HeaderSection,
-  footer:       FooterSection,
-  promo_banner: PromoBannerSection,  // ← key = el mismo que en proxima.website.json
-};
+**a) Añadir el import:**
+```astro
+---
+import PromoBanner from "./PromoBanner.astro";
+// ... resto de imports
+---
 ```
 
-**El key en `SECTION_MAP` debe ser idéntico al `key` en `proxima.website.json`.**
+**b) Añadir al SECTION_REGISTRY:**
+```ts
+const SECTION_REGISTRY = {
+  hero_bento:   HeroBento,
+  product_grid: ProductGrid,
+  promo_banner: PromoBanner,    // ← nueva
+  // ...
+} satisfies Record<string, any>;
+```
+
+**c) Añadir el bloque de render** (dentro del template de `SectionRenderer.astro`):
+```astro
+{section.type === "promo_banner" && (
+  <PromoBanner
+    image={section.values.image}
+    title={section.values.title}
+    subtitle={section.values.subtitle}
+    cta={section.values.cta}
+    bg_color={section.values.bg_color}
+    cmsPreview={cmsPreview}
+    attributesMeta={section.attributesMeta}
+  />
+)}
+```
+
+**El key en `SECTION_REGISTRY` debe ser idéntico al `key` en `proxima.website.json`.**
 
 ---
 
 ## Paso 6 — Deploy
 
 ```bash
-# Verificar el payload
-templateizer website-deploy --dry-run
+# Verificar el payload sin llamar la API
+proxima deploy --dry-run
 
 # Deploy
-templateizer website-deploy
+proxima deploy
 ```
 
 Output esperado si es la primera vez que se deploya esta sección:

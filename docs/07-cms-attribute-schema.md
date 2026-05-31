@@ -175,6 +175,8 @@ Algunos atributos de primer nivel usan `type: "text"` + `config.schema.mode: "sc
 | `select` | Requiere `options` (string[] u objeto[]) |
 | `product-picker` | ID de producto en catálogo |
 
+> `select` y `product-picker` son **Builder-only**: válidos dentro de `item_fields` pero **no** como tipo de primer nivel en `attribute_schema`. Usarlos fuera de `item_fields` causa un `422` en el deploy. Los tipos de primer nivel permitidos son los de la tabla en [`proxima-api/docs/cms-attribute-schema.md`](../../../proxima-api/docs/cms-attribute-schema.md).
+
 ---
 
 ## Referencia de implementación

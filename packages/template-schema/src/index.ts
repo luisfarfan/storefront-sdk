@@ -220,6 +220,12 @@ export const websiteDeploySectionTypeSchema = z.object({
 export const websiteDeployScaffoldSectionSchema = z.object({
   section_type:   z.string().min(1),
   order:          z.number().int().default(0),
+  // Canonical field — the section's initial content. Applied by both
+  // `proxima deploy` (Section.values) and `proxima template:publish`
+  // (TemplateStructure → instantiate). Renamed from `default_values` —
+  // the legacy name is still accepted for backwards compat with 214store
+  // and nocturna manifests.
+  values:         z.record(jsonValue).optional(),
   default_values: z.record(jsonValue).optional(),
 });
 
@@ -235,6 +241,9 @@ export const websiteDeployShellSectionSchema = z.object({
   section_type: z.string().min(1).optional(),
   label:        z.string().optional(),
   order:        z.number().int().default(0),
+  // Canonical field — see scaffold section's `values` doc. Coexists with the
+  // legacy top-level `shell_default_values[slot]` map for backwards compat.
+  values:       z.record(jsonValue).optional(),
 });
 
 export const websiteDeploySmartCollectionPlaceholderSchema = z.object({

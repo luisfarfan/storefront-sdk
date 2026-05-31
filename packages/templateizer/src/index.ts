@@ -1022,10 +1022,13 @@ function buildTemplateStructure(manifest: ReturnType<typeof loadWebsiteManifest>
 
   const pages = manifest.pages.map((page) => {
     const sections = (page.scaffold_sections ?? []).map((scaffold, si) => {
-      const rawValues = scaffold.default_values ?? {};
+      // Prefer the canonical `values` field; fall back to legacy `default_values`
+      // so existing 214store/nocturna manifests keep working until migrated.
+      const rawValues = scaffold.values ?? scaffold.default_values ?? {};
+      const fieldName = scaffold.values ? "values" : "default_values";
       const values: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(rawValues)) {
-        values[k] = convertValue(v, `pages[${page.resolver_kind}].scaffold_sections[${si}].default_values.${k}`);
+        values[k] = convertValue(v, `pages[${page.resolver_kind}].scaffold_sections[${si}].${fieldName}.${k}`);
       }
       return {
         name: scaffold.section_type,
@@ -1050,10 +1053,15 @@ function buildTemplateStructure(manifest: ReturnType<typeof loadWebsiteManifest>
   const shellDefaultValues = (manifest.shell_default_values ?? {}) as Record<string, Record<string, unknown>>;
   const shellSections = (manifest.shell_sections ?? []).map((shell) => {
     const slot = shell.key;
-    const rawValues = shellDefaultValues[slot] ?? {};
+    // Prefer the canonical per-entry `values`; fall back to the legacy top-level
+    // `shell_default_values[slot]` map.
+    const rawValues = shell.values ?? shellDefaultValues[slot] ?? {};
+    const fieldPath = shell.values
+      ? `shell_sections[${slot}].values`
+      : `shell_default_values.${slot}`;
     const values: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(rawValues)) {
-      values[k] = convertValue(v, `shell_default_values.${slot}.${k}`);
+      values[k] = convertValue(v, `${fieldPath}.${k}`);
     }
     return {
       slot,
@@ -1172,11 +1180,11 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const apiUrl          = resolveVar(readFlag(argv, "--api-url"),        "PROXIMA_API_URL",        creds.api_url,      dotenv);
   const serviceKey      = resolveVar(readFlag(argv, "--service-key"),    "PROXIMA_SERVICE_KEY",    creds.service_key,  dotenv);
   const templateKey     = resolveVar(readFlag(argv, "--template-key"),   "PROXIMA_TEMPLATE_KEY",   creds.template_key, dotenv);
-  const s3Bucket        = resolveVar(readFlag(argv, "--s3-bucket"),      "S3_TEMPLATES_BUCKET",    creds.s3_bucket,    dotenv);
-  const s3Region        = resolveVar(readFlag(argv, "--s3-region"),      "S3_TEMPLATES_REGION",    creds.s3_region,    dotenv, "AWS_REGION");
   const dryRun          = argv.includes("--dry-run");
   const publishManifest = argv.includes("--publish-manifest");
-  const localOnly       = argv.includes("--local-only");
+  // --s3-bucket / --s3-region / --local-only are accepted silently for
+  // backwards compat with CI invocations. The CLI no longer writes to S3 —
+  // the API does (via the `/publish` endpoint), so these flags are no-ops.
 
   const nameOverride         = readFlag(argv, "--name");
   const descOverride         = readFlag(argv, "--description");
@@ -1274,9 +1282,6 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
     }
   }
 
-  const manifestKey = `${templateKey}/manifest.json`;
-  const useLocalMode = localOnly || !s3Bucket;
-
   if (dryRun) {
     console.log(pc.dim("Dry run — no API call made.\n"));
     console.log(`Template key: ${pc.cyan(templateKey)}`);
@@ -1284,7 +1289,8 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
     console.log("\nPayload:");
     console.log(JSON.stringify(payload, null, 2));
     if (publishManifest && structure) {
-      console.log(`\nManifest mode: ${useLocalMode ? pc.dim(`local (TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey})`) : `S3 ${pc.cyan(`s3://${s3Bucket}/${manifestKey}`)} ${pc.dim(`(region=${s3Region ?? "default"})`)}`}`);
+      console.log(`\nManifest publish endpoint: ${pc.cyan(`POST /api/v1/admin/cms/website-templates/${templateKey}/publish`)}`);
+      console.log(pc.dim("(The API validates required values and uploads the manifest to S3.)"));
       console.log("\nStructure:");
       console.log(JSON.stringify(structure, null, 2));
     }
@@ -1360,77 +1366,105 @@ async function templateCreateCommand(targetPath: string, argv: string[]): Promis
   const elapsed1 = ((Date.now() - start) / 1000).toFixed(1);
   spinner.succeed(`Template ${pc.cyan(`'${templateKey}'`)} ${action} ${pc.dim(`(id=${createdRow.id ?? "?"})`)} ${pc.dim(elapsed1 + "s")}`);
 
-  if (!publishManifest || !structure) {
+  if (!publishManifest || !manifest) {
     return 0;
   }
 
-  // Step 3 — upload structure to S3 (or skip in local mode)
-  const spinner2 = createSpinner("Uploading manifest");
-  let manifestVersionId: string | undefined;
-  if (!useLocalMode) {
-    try {
-      manifestVersionId = await uploadManifestToS3({
-        bucket: s3Bucket!,
-        key: manifestKey,
-        region: s3Region,
-        body: JSON.stringify(structure),
-      });
-      spinner2.succeed(`Uploaded ${pc.cyan(manifestKey)} to ${pc.cyan(`s3://${s3Bucket}`)} ${pc.dim(`(VersionId=${manifestVersionId})`)}`);
-    } catch (err: unknown) {
-      spinner2.fail(`S3 upload failed: ${(err as Error).message}`);
-      console.error(sym.hint("Check AWS credentials and that the 'aws' CLI is installed and on PATH."));
-      return 1;
-    }
-  } else {
-    spinner2.stop();
-    console.log(sym.hint(`Local mode — skipped S3 upload. API reads from ${pc.dim(`TEMPLATES_LOCAL_FALLBACK_DIR/${manifestKey}`)}`));
-  }
+  // Step 3 — single round trip: POST /publish with the manifest shape
+  // (section_types + pages with scaffold_sections + shell_sections with key).
+  // The API validates every is_required attribute, converts to TemplateStructure,
+  // uploads to S3 (single custodian — CLI no longer writes directly), pins the
+  // VersionId on the template row, and optionally refreshes marketplace metadata.
+  // Replaces the legacy "aws s3 put-object" + "PATCH /manifest" two-step that
+  // ran from the developer's local AWS credentials.
+  const spinner2 = createSpinner("Validating + publishing manifest");
+  const publishUrl = `${baseUrl}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/publish`;
 
-  // Step 4 — PATCH /manifest on the API
-  const spinner3 = createSpinner("Publishing manifest pointer");
-  const manifestUrl = `${baseUrl}/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/manifest`;
-  let manifestResponse: Response;
+  const shellDefaultValues = (manifest.shell_default_values ?? {}) as Record<string, Record<string, unknown>>;
+
+  const publishBody: Record<string, unknown> = {
+    section_types: manifest.section_types,
+    pages: manifest.pages.map((page) => ({
+      resolver_kind: page.resolver_kind,
+      ...(page.path !== undefined && { path: page.path }),
+      ...(page.label !== undefined && { label: page.label }),
+      scaffold_sections: (page.scaffold_sections ?? []).map((sc) => ({
+        section_type: sc.section_type,
+        order: sc.order ?? 0,
+        values: sc.values ?? sc.default_values ?? {},
+      })),
+    })),
+    shell_sections: (manifest.shell_sections ?? []).map((sh) => ({
+      key: sh.key,
+      ...(sh.section_type !== undefined && { section_type: sh.section_type }),
+      ...(sh.label !== undefined && { label: sh.label }),
+      order: sh.order ?? 0,
+      values: sh.values ?? shellDefaultValues[sh.key] ?? {},
+    })),
+    smart_collection_placeholders: manifest.smart_collection_placeholders ?? {},
+  };
+
+  let publishResponse: Response;
   try {
-    manifestResponse = await fetchWithRetry(manifestUrl, {
-      method: "PATCH",
+    publishResponse = await fetchWithRetry(publishUrl, {
+      method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${serviceKey}` },
-      body: JSON.stringify({
-        manifest_s3_key: manifestKey,
-        manifest_s3_version_id: manifestVersionId ?? null,
-      }),
+      body: JSON.stringify(publishBody),
     });
   } catch (err: unknown) {
-    spinner3.fail(`Network error patching manifest: ${(err as Error).message}`);
+    spinner2.fail(`Network error publishing manifest: ${(err as Error).message}`);
     return 1;
   }
 
-  const manifestText = await manifestResponse.text();
+  const publishText = await publishResponse.text();
   const elapsed2 = ((Date.now() - start) / 1000).toFixed(1);
 
-  if (manifestResponse.status === 404) {
-    spinner3.fail(`Template ${pc.cyan(`'${templateKey}'`)} not found when patching manifest (unexpected after create/update).`);
+  if (publishResponse.status === 404) {
+    spinner2.fail(`Template ${pc.cyan(`'${templateKey}'`)} not found when publishing (unexpected after create/update).`);
     return 1;
   }
-  if (manifestResponse.status === 403) {
-    spinner3.fail("Access denied patching manifest.");
+  if (publishResponse.status === 403) {
+    spinner2.fail("Access denied publishing manifest. The service key needs cms:templates:write scope.");
     return 1;
   }
-  if (!manifestResponse.ok) {
-    spinner3.fail(`Manifest deploy failed ${pc.dim(`(${manifestResponse.status})`)}: ${manifestText}`);
+  if (publishResponse.status === 422) {
+    spinner2.fail("Manifest validation failed — required values missing on one or more sections.");
+    try {
+      const errBody = JSON.parse(publishText) as { detail?: { errors?: Array<{ location: string; section_type: string; attribute: string; code: string; message: string }> } };
+      const errors = errBody?.detail?.errors ?? [];
+      if (errors.length > 0) {
+        console.log("");
+        for (const e of errors) {
+          console.log(`  ${pc.red("✗")} ${pc.dim(e.location)}`);
+          console.log(`    ${pc.bold(e.section_type)}.${e.attribute} — ${e.message}`);
+        }
+        console.log("");
+        console.log(sym.hint("Fill the missing values in proxima.website.json and re-run."));
+      } else {
+        console.log(publishText);
+      }
+    } catch {
+      console.log(publishText);
+    }
+    return 1;
+  }
+  if (!publishResponse.ok) {
+    spinner2.fail(`Manifest publish failed ${pc.dim(`(${publishResponse.status})`)}: ${publishText}`);
     return 1;
   }
 
-  const pageCount = structure.pages.length;
-  const shellCount = structure.shell_sections.length;
-  const placeholderCount = Object.keys(structure.smart_collection_placeholders).length;
+  let publishedBody: { manifest_s3_key?: string; manifest_s3_version_id?: string | null; sections_validated?: number } = {};
+  try { publishedBody = JSON.parse(publishText); } catch { /* ignore */ }
 
-  spinner3.succeed(`Manifest published ${pc.dim(elapsed2 + "s")}`);
+  const pageCount = manifest.pages.length;
+  const shellCount = (manifest.shell_sections ?? []).length;
+  const placeholderCount = Object.keys(manifest.smart_collection_placeholders ?? {}).length;
+  const sectionsValidated = publishedBody.sections_validated ?? (pageCount + shellCount);
+
+  spinner2.succeed(`Manifest published ${pc.dim(elapsed2 + "s")} ${pc.dim(`(${sectionsValidated} section(s) validated)`)}`);
   console.log(sym.hint(`Pages: ${pageCount}  ·  Shell sections: ${shellCount}  ·  Smart collection placeholders: ${placeholderCount}`));
-  if (manifestVersionId) {
-    console.log(sym.hint(`Manifest:  ${pc.cyan(`s3://${s3Bucket}/${manifestKey}`)}`));
-    console.log(sym.hint(`VersionId: ${pc.dim(manifestVersionId)}`));
-  } else {
-    console.log(sym.hint(`Manifest:  ${pc.dim(`(local) ${manifestKey}`)}`));
+  if (publishedBody.manifest_s3_key) {
+    console.log(sym.hint(`Manifest: ${pc.cyan(publishedBody.manifest_s3_key)} ${pc.dim(`VersionId=${publishedBody.manifest_s3_version_id ?? "null"}`)}`));
   }
   return 0;
 }
@@ -1459,49 +1493,6 @@ async function fetchWithRetry(url: string, init: RequestInit = {}, attempts = 3)
     }
   }
   throw lastError ?? new Error("fetch failed after retries");
-}
-
-async function uploadManifestToS3(args: {
-  bucket: string;
-  key: string;
-  region?: string;
-  body: string;
-}): Promise<string> {
-  const { spawn } = await import("node:child_process");
-  return new Promise<string>((resolve, reject) => {
-    const cliArgs = [
-      "s3api",
-      "put-object",
-      "--bucket", args.bucket,
-      "--key", args.key,
-      "--body", "-",
-      "--content-type", "application/json",
-      "--output", "json",
-    ];
-    if (args.region) {
-      cliArgs.push("--region", args.region);
-    }
-    const proc = spawn("aws", cliArgs, { stdio: ["pipe", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    proc.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    proc.on("error", (err) => reject(new Error(`Failed to spawn aws CLI: ${err.message}`)));
-    proc.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error(`aws s3api put-object exited ${code}: ${stderr.trim()}`));
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stdout || "{}") as { VersionId?: string };
-        resolve(parsed.VersionId ?? "null");
-      } catch (err: unknown) {
-        reject(new Error(`Failed to parse aws CLI response: ${(err as Error).message}`));
-      }
-    });
-    proc.stdin.write(args.body);
-    proc.stdin.end();
-  });
 }
 
 // ─── Help ─────────────────────────────────────────────────────────────────────
