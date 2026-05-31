@@ -803,6 +803,51 @@ export async function fetchBusinessProfile(
   return response.json();
 }
 
+/**
+ * Payment method enabled by the merchant for their storefront. The shape mirrors
+ * the API's `StorefrontPaymentMethodInstruction` but keeps only the fields the
+ * storefront footer / "we accept" badges need. Checkout flows that also need
+ * wallet phones, bank accounts, QR codes can extend this type or fetch the
+ * full instructions endpoint separately.
+ */
+export interface StorefrontPaymentMethod {
+  code: string;
+  name_es: string;
+  description_es: string | null;
+  category: string;
+  kind: "offline" | "online" | "hybrid";
+  /** Platform-managed icon URL. May be null if the platform catalog hasn't seeded one — the storefront should fall back to a locally styled badge keyed off `code`. */
+  icon_url: string | null;
+}
+
+/**
+ * Fetch the merchant's enabled payment methods. Tenant-wide — call once per
+ * request and cache on `Astro.locals` so the footer reads from memory.
+ *
+ * Backed by `GET /store/commerce/payment-instructions` (public storefront
+ * endpoint — same surface used by the checkout flow).
+ *
+ * @example
+ * const methods = await fetchPaymentMethods(
+ *   { baseUrl: env.apiUrl, serviceKey: env.serviceKey },
+ *   website.business_id,
+ * );
+ */
+export async function fetchPaymentMethods(
+  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
+  businessId: string,
+): Promise<StorefrontPaymentMethod[]> {
+  const url = new URL("/api/v1/store/commerce/payment-instructions", config.baseUrl);
+  const headers: Record<string, string> = {
+    "X-Business-ID": businessId,
+  };
+  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error(`Payment methods fetch failed: ${response.status}`);
+  const data = await response.json() as { items?: StorefrontPaymentMethod[] };
+  return data.items ?? [];
+}
+
 /** List all websites for a service-key authenticated caller. Useful for build-time scripts. */
 export async function fetchProximaWebsiteList(config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">): Promise<ProximaWebsiteResponse[]> {
   const url = new URL("/api/v1/storefront/cms/websites", config.baseUrl);
