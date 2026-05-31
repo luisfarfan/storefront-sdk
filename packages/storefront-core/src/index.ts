@@ -804,6 +804,77 @@ export async function fetchBusinessProfile(
 }
 
 /**
+ * Active promotional campaign — the single source of truth for "when does
+ * this sale end" + the display knobs (badge text, theme color, hero copy).
+ *
+ * When a campaign is linked to a SmartCollection (via `smart_collection_id`),
+ * the storefront's composition endpoint also reflects the campaign's
+ * `active_until` in `schedule.countdown_target_at`, so existing countdown
+ * components keep working transparently. Sections that want richer display
+ * (badge, themed CTA, multi-locale copy) read the full campaign payload here.
+ */
+export interface StorefrontCampaign {
+  id: number;
+  slug: string | null;
+  name: Record<string, string>;
+  description: Record<string, string> | null;
+  discount_type: "percentage" | "fixed_amount";
+  discount_value: number;
+  target_type: "product" | "category" | "brand" | "global";
+  target_ids: number[];
+  active_from: string | null;
+  active_until: string | null;
+  smart_collection_id: number | null;
+  display_config: {
+    badge_text?: string | null;
+    hero_copy?: Record<string, string> | null;
+    theme_color?: string | null;
+    show_countdown?: boolean | null;
+  } | null;
+}
+
+/**
+ * Fetch all active campaigns for a tenant. An "active" campaign is
+ * `is_active=true` AND (active_until is null OR active_until > now).
+ * Scheduled-but-not-yet-started campaigns are included so the storefront
+ * can render teasers ("Empieza en X días"); filter by `active_from` if
+ * you only want strictly-live ones.
+ */
+export async function fetchCampaigns(
+  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
+  businessId: string,
+): Promise<StorefrontCampaign[]> {
+  const url = new URL("/api/v1/storefront/campaigns", config.baseUrl);
+  url.searchParams.set("business_id", businessId);
+  const headers: Record<string, string> = {};
+  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
+  const response = await fetch(url, { headers });
+  if (!response.ok) throw new Error(`Campaigns fetch failed: ${response.status}`);
+  return response.json();
+}
+
+/**
+ * Fetch a single campaign by slug. Returns null if the campaign doesn't
+ * exist or is no longer active — sections pinned to a specific campaign
+ * (e.g. a hero hardcoded to 'black-week-2026') use this to detect when
+ * to fall back to their generic copy.
+ */
+export async function fetchCampaignBySlug(
+  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
+  businessId: string,
+  slug: string,
+): Promise<StorefrontCampaign | null> {
+  const url = new URL(`/api/v1/storefront/campaigns/${encodeURIComponent(slug)}`, config.baseUrl);
+  url.searchParams.set("business_id", businessId);
+  const headers: Record<string, string> = {};
+  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
+  const response = await fetch(url, { headers });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Campaign fetch failed: ${response.status}`);
+  return response.json();
+}
+
+/**
  * Payment method enabled by the merchant for their storefront. The shape mirrors
  * the API's `StorefrontPaymentMethodInstruction` but keeps only the fields the
  * storefront footer / "we accept" badges need. Checkout flows that also need
