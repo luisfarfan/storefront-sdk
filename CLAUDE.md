@@ -232,6 +232,9 @@ Para tareas específicas, consulta los skills en `.claude/skills/`:
 | `create-storefront` | Crear un nuevo proyecto de storefront desde cero |
 | `website-deploy` | Ejecutar o debuggear un deploy de website |
 | `add-section` | Añadir una nueva sección a un storefront existente |
+| `add-page` | Añadir una página nueva a un storefront (prerender, manifest, deploy) |
+| `add-smart-collection` | Añadir una colección dinámica de catálogo (rail de productos, grid de categorías, strip de marcas) |
+| `debug-storefront` | Triage de bugs del storefront (página vacía, [object Object], carrito roto, etc.) |
 | `openspec-propose` | Proponer un cambio al SDK/CLI |
 | `openspec-apply-change` | Implementar tareas de un OpenSpec |
 

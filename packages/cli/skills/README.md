@@ -30,6 +30,9 @@ proxima skills install --force
 | `website-deploy` | Deploy `proxima.website.json`, debug Builder/deploy errors |
 | `wire-cms-sections` | Connect existing Astro sections to CMS (schema + EditableAttribute) |
 | `add-section` | Add a new CMS-editable section to a storefront |
+| `add-page` | Add a new page to a storefront (prerender rules, manifest, deploy) |
+| `add-smart-collection` | Add a dynamic catalog collection (product rail, category grid, brand strip) |
+| `debug-storefront` | Triage storefront bugs (empty page, [object Object], broken cart, etc.) |
 | `new-storefront-app` | Scaffold a new storefront app (monorepo pattern) |
 | `ecommerce-audit` | UX/CRO audit of a Proxima storefront |
 | `seo` | SEO setup and best practices for storefronts |
