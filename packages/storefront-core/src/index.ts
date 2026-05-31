@@ -1214,6 +1214,20 @@ export interface BuyerProfileUpdateParams {
 // Storefront catalog types
 // ---------------------------------------------------------------------------
 
+/** Campaign / Promotion driving this product's price (or matching the
+ *  product by targeting rules when direct-sale ties campaign on price).
+ *  Sections rendering this product can pull badge / theme / countdown
+ *  from here instead of pinning to a campaign by slug. */
+export interface StorefrontAppliedCampaign {
+  id: number;
+  slug?: string | null;
+  name?: Record<string, string> | null;
+  badge_text?: string | null;
+  theme_color?: string | null;
+  active_until?: string | null;
+  hero_copy?: Record<string, string> | null;
+}
+
 /** Lightweight product representation used in listings, search results, and smart collections. */
 export interface StorefrontProductSummary {
   id: number;
@@ -1230,6 +1244,10 @@ export interface StorefrontProductSummary {
   currency?: string | null;
   /** First variant id — use this when calling addToCart from a listing card */
   default_variant_id?: number | null;
+  /** Campaign whose branding (badge, theme, countdown) should be shown
+   *  alongside this product. Populated automatically when an active
+   *  Promotion targets the product. */
+  applied_promotion?: StorefrontAppliedCampaign | null;
 }
 
 /** Pagination metadata returned by listing endpoints. */
