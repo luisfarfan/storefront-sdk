@@ -130,6 +130,70 @@ body[data-cms-preview="true"][data-cms-preview-mode="edit"] [data-cms-attribute]
   z-index: 88;
 }
 
+/* ─── WYSIWYG discoverability ───────────────────────────────────────
+ * Atributos editables inline (text, rich_text, number) muestran un
+ * cursor I-beam y un mini hint flotante "✏️ Doble clic para editar"
+ * en hover. Solo aparece tras 600ms hover (anti-ruido) y desaparece
+ * inmediatamente. Sin esto, la feature es invisible para merchants.
+ * ────────────────────────────────────────────────────────────────── */
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="text"],
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="rich_text"],
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="number"] {
+  cursor: text;
+}
+
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="text"]:hover,
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="rich_text"]:hover,
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="number"]:hover {
+  outline: 1px dashed rgba(59, 130, 246, 0.75);
+  outline-offset: 3px;
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* "✏️ Doble clic" tooltip — reemplaza el badge genérico de hover en tipos
+ * inline-editables para que el hint sea contextual y accionable. */
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="text"]:hover::after,
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="rich_text"]:hover::after,
+body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+  [data-cms-attribute][data-cms-attribute-type="number"]:hover::after {
+  content: "✏ Doble clic para editar";
+  background: rgba(59, 130, 246, 0.96) !important;
+  color: #f0f9ff !important;
+  opacity: 0;
+  animation: cms-wysiwyg-hint-fade-in 220ms ease-out 600ms forwards;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.32) !important;
+}
+
+@keyframes cms-wysiwyg-hint-fade-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Mientras la edición inline está activa, NO mostrar el hint (sería ruido) */
+body[data-cms-preview="true"]
+  [data-cms-attribute][data-cms-inline-editing="true"]:hover::after {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body[data-cms-preview="true"][data-cms-preview-mode="edit"]
+    [data-cms-attribute][data-cms-attribute-type]:hover::after {
+    animation: none !important;
+    opacity: 1;
+  }
+}
+
 body[data-cms-preview="true"] [data-cms-attribute][data-cms-attribute-highlighted="true"] {
   background: rgba(250, 204, 21, 0.26) !important;
   box-shadow:
