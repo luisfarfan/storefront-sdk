@@ -203,6 +203,53 @@ Ver ejemplos de render en [05-smart-collections.md](./05-smart-collections.md) y
 
 ---
 
+## Campaign auto-detect — secciones promocionales sin pin manual
+
+Secciones tipo `tech_hero_promo` / `flash_offers_band` que muestran una campaña
+(badge + countdown + theme) **no se pinean por slug**. Auto-derivan el branding
+desde el primer producto de su Smart Collection:
+
+```ts
+// En el frontmatter de la sección Astro
+const items = (props.products_collection?.items ?? []) as ProductSummary[];
+const autoCampaign = items[0]?.applied_promotion ?? null;
+
+const targetAt = autoCampaign?.active_until;
+const badge    = autoCampaign?.badge_text;
+const theme    = autoCampaign?.theme_color;
+```
+
+Cada `ProductSummary` de la API trae un campo opcional `applied_promotion` con
+la `Promotion` ganadora del pricing engine (ver `12-smart-collections.md` §5.5).
+
+### Precedence sugerida (cuando declarás un `campaign_slug` como override)
+
+Si la sección expone un attr `campaign_slug` (text) en su schema para que el
+merchant fuerce una campaña específica, la chain canónica es:
+
+```
+1. items[0].applied_promotion     (auto-detect del SC)
+2. fetchCampaignBySlug result     (pin manual via section attr)
+3. section attrs legacy           (campaign_end_date, badge_text, ...)
+```
+
+### Por qué este patrón
+
+- Crear/editar una `Promotion` en admin = el HOME se rebrandea solo.
+- Sin riesgo de mismatch entre "campaña que descuenta el precio" y "campaña que
+  se renderiza visualmente" — son la misma.
+- Múltiples Promotions activas en paralelo (Black Week GLOBAL + Audio Week BRAND
+  + Liquidación CATEGORY): cada producto recibe la suya por priority.
+
+Referencias:
+- [07-commerce.md](./07-commerce.md) § "Campañas y `applied_promotion`" — tipos
+  TS + helpers `fetchCampaigns` / `fetchCampaignBySlug`.
+- [12-smart-collections.md](./12-smart-collections.md) §5.5 — shape del campo
+  en items + linked Promotion countdown.
+- API canónica: `proxima-api/docs/commerce/promotions-campaigns.md`.
+
+---
+
 ## Localización
 
 `localizable: true` → la API resuelve al locale del website. En el storefront recibes un **string**, no un dict por idioma.

@@ -674,6 +674,71 @@ await setDefaultBuyerAddress({ baseUrl: apiUrl }, { business_id }, { token, addr
 | `fetchCategoriesDirectory` | Listar todas las categorías (plano, para sitemap) |
 | `fetchCategoryNavTree` | Árbol recursivo de categorías para mega menú de navegación |
 | `fetchBrandsDirectory` | Listar todas las marcas |
+| `fetchBusinessProfile` | GET perfil del business (legal, redes, contacto, showroom) — tenant-wide |
+| `fetchPaymentMethods` | GET métodos de pago activos del business — tenant-wide |
+| `fetchCampaigns` | GET lista de campañas activas del business |
+| `fetchCampaignBySlug` | GET una campaña por slug (override manual del auto-detect) |
+
+### Campañas y `applied_promotion` — auto-detect en secciones
+
+Cada item devuelto por `StorefrontProductSummary` (PDP, listados, smart collections)
+puede traer un campo opcional `applied_promotion`:
+
+```ts
+type StorefrontAppliedCampaign = {
+  id: string;
+  slug: string;
+  badge_text: string | null;       // "BLACK WEEK", "AUDIO WEEK"
+  theme_color: string | null;      // "#7c3aed" — tinte del badge/hero
+  active_until: string | null;     // ISO UTC — alimenta el countdown
+  hero_copy: string | { es?: string; en?: string } | null;
+};
+
+type StorefrontProductSummary = {
+  // ... campos estándar
+  applied_promotion?: StorefrontAppliedCampaign | null;
+};
+```
+
+**Cómo se popula:** el pricing engine en la API (`_apply_promotions`) matchea la
+Promotion ganadora por priority + target_type, la cachea en
+`variant.applied_promotion_obj`, y `serialize_product` (del SC resolver) la expone
+en cada item.
+
+**Cómo usarlo en el storefront:**
+
+```ts
+// Auto-detect: la sección lee del primer producto, sin pin manual
+const autoCampaign = products[0]?.applied_promotion ?? null;
+const badge = autoCampaign?.badge_text;
+const countdownTarget = autoCampaign?.active_until;
+const hero = typeof autoCampaign?.hero_copy === "object"
+  ? autoCampaign.hero_copy.es
+  : autoCampaign?.hero_copy;
+```
+
+**Override manual con `fetchCampaignBySlug`:**
+
+```ts
+import { fetchCampaignBySlug } from "@proxima-io/storefront-core";
+
+// Solo si la sección tiene un attr `campaign_slug` con valor
+const pinned = sectionCampaignSlug
+  ? await fetchCampaignBySlug({ baseUrl, businessId, slug: sectionCampaignSlug, serviceKey })
+  : null;
+```
+
+**Precedence sugerida** en componentes de sección:
+
+```
+1. products[0].applied_promotion   (auto-detect del SC)
+2. fetchCampaignBySlug result      (pin manual via section attr)
+3. section attributes legacy       (campaign_end_date, badge_text planos)
+```
+
+Esto permite cambiar de campaña creando una nueva Promotion en admin — sin
+deploy ni edición de secciones. Patrón completo en
+`proxima-storefronts/docs/architecture.md` § "Campaign Auto-Detect Pattern".
 
 ### Manejo de errores de stock
 

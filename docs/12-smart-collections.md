@@ -372,7 +372,15 @@ nunca ve el ID raw — ve el envelope.
       "image_url": "https://cdn…/rtx-4080.webp",
       "price": { "amount": "5499.00", "currency": "PEN" },
       "compare_at_price": { "amount": "5999.00", "currency": "PEN" },
-      "in_stock": true
+      "in_stock": true,
+      "applied_promotion": {
+        "id": 12,
+        "slug": "black-week-2026",
+        "badge_text": "BLACK WEEK",
+        "theme_color": "#7c3aed",
+        "active_until": "2026-12-01T00:00:00Z",
+        "hero_copy": { "es": "Hasta -30% en GPUs" }
+      }
     }
   ],
   "meta": {
@@ -421,6 +429,7 @@ nunca ve el ID raw — ve el envelope.
 | `schedule.data_window` | `{ from, until }` derivado de `active_from` / `active_until` |
 | `schedule.countdown_target_at` | ISO 8601 UTC del target del countdown (puede ser null) |
 | `schedule.countdown_target_source` | De dónde vino el target |
+| `items[].applied_promotion` | Campaña ganadora del pricing engine para ese producto (opcional, ver §5.5) |
 
 ### `inactive_reason`
 
@@ -439,6 +448,7 @@ un fallback con copy de la sección sin la lista.
 | Valor | Significado |
 |-------|-------------|
 | `config.display.countdown_target_at` | Override explícito en `config.display` |
+| `linked_promotion_active_until` | Cuando una `Promotion` está linkeada a la SC vía `Promotion.smart_collection_id`, gana sobre `active_until` — single source of truth (ver §5.5) |
 | `active_until` | Derivado automáticamente del fin de ventana de datos |
 | `section_attribute` | Sólo aparece en `attributes_meta` de un attr `datetime`, no en envelope SC |
 
@@ -474,6 +484,92 @@ El patrón canónico para una sección de campaña (`tech_hero_promo`, `flash_of
    2. `attributes.<sc_attr>.schedule.countdown_target_at` (SC)
 4. Cuando `now > target` el cliente puede ocultar el componente o cambiar copy;
    el envelope SC además entrega `meta.inactive: true, inactive_reason: "after_end"`.
+
+---
+
+## 5.5. `applied_promotion` en items + linked Promotion (campaign auto-detect)
+
+Cada item del envelope puede traer un campo opcional `applied_promotion` cuando el
+pricing engine matcheó una `Promotion` activa a ese producto. Este es el mecanismo
+que permite a las secciones promocionales auto-rebrandearse **sin pinear un slug
+por sección**.
+
+### Shape del campo
+
+```jsonc
+items[i].applied_promotion = {
+  "id": 12,
+  "slug": "black-week-2026",                    // stable handle
+  "badge_text": "BLACK WEEK",                   // del display_config
+  "theme_color": "#7c3aed",                     // hex — tinte del badge/hero
+  "active_until": "2026-12-01T00:00:00Z",       // ISO UTC
+  "hero_copy": { "es": "Hasta -30% en GPUs" }   // localizado
+}
+```
+
+Cuando no hay Promotion ganadora (ningún match O sale_source="direct" sin fallback
+de target match), el campo es `null`.
+
+### Cómo lo popula el resolver
+
+```
+Promotion (admin) ──▶ pricing engine matchea ──▶ variant.applied_promotion_obj
+                                                          │
+                                                          ▼
+                                         SC resolver serializa: cada item
+                                         del envelope expone applied_promotion
+                                                          │
+                                                          ▼
+                                         section reads items[0].applied_promotion
+                                         → badge + countdown + theme automático
+```
+
+Ver `proxima-api/docs/commerce/promotions-campaigns.md` para el modelo de
+Promotion, el pricing engine y el `matching_promo` fallback para direct sale tie.
+
+### Patrón de consumo en una sección
+
+```ts
+// La sección NO necesita section.values.campaign_slug
+const autoCampaign = items[0]?.applied_promotion ?? null;
+const targetAt    = autoCampaign?.active_until;
+const badge       = autoCampaign?.badge_text;
+const hero        = typeof autoCampaign?.hero_copy === "object"
+                    ? autoCampaign.hero_copy.es
+                    : autoCampaign?.hero_copy;
+
+// Si la sección expone un attr opcional `campaign_slug` (override manual),
+// la precedence sugerida es:
+//   1. items[0].applied_promotion  (auto)
+//   2. fetchCampaignBySlug result  (pin manual)
+//   3. section attrs legacy        (campaign_end_date, etc.)
+```
+
+### Linked Promotion countdown
+
+Una `Promotion` puede llevar `smart_collection_id` apuntando a la SC que la
+renderiza. Cuando ese link está presente, el `countdown_target_source` del
+envelope SC pasa a ser `linked_promotion_active_until` — es decir, el countdown
+sale de `Promotion.active_until` en lugar de `SmartCollection.active_until`.
+
+> **Por qué:** un único lugar de verdad para "¿cuándo termina la promo?". La SC
+> sigue controlando qué productos entran; la Promotion controla la fecha + el
+> branding visual. Editar `active_until` en la Promotion mueve el countdown del
+> storefront sin tocar la SC.
+
+### Gotcha: SC resolver debe hidratar via pricing engine
+
+Si una SC trae items **sin** `applied_promotion` aunque la API individual
+(`GET /storefront/products/{slug}`) sí lo tiene, el SC resolver no está hidratando.
+`_list_products_for_collection` debe llamar:
+
+```python
+products = await self.product_repo.list(business_id=..., ...)
+await self.catalog_service._apply_promotions(products, business_id)  # ← hidrata
+```
+
+Sin esa línea, `variant.applied_promotion_obj` queda `None` y `serialize_product`
+no expone el campo. Tests: `tests/integration/api/test_cms_campaign_countdown_*.py`.
 
 ---
 
