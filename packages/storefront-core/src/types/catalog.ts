@@ -147,7 +147,7 @@ export interface StorefrontListingParams {
   currency?: string;
 }
 
-/** Coupon validation result from GET /commerce/coupons/validate */
+/** Coupon validation result from GET /storefront/coupons/validate */
 export interface CouponValidationResult {
   valid: boolean;
   code?: string;

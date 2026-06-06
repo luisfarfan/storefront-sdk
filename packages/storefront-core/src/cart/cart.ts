@@ -1,7 +1,18 @@
-import { apiError, cartHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import type { Cart } from '../types/cart.js';
 import type { CouponValidationResult } from '../types/catalog.js';
+
+function cartContext(
+  website: ProximaWebsiteResponse,
+  params: { token?: string | null; sessionId?: string | null },
+) {
+  return {
+    businessId: website.business_id,
+    token: params.token,
+    sessionId: params.sessionId,
+  };
+}
 
 /** Fetch the current cart. Works for both guest sessions and authenticated customers. */
 export async function fetchCart(
@@ -9,10 +20,8 @@ export async function fetchCart(
   website: ProximaWebsiteResponse,
   params: { token?: string | null; sessionId?: string | null }
 ): Promise<Cart> {
-  const url = new URL("/api/v1/cart", config.baseUrl);
-  const res = await fetch(url, { headers: cartHeaders(website.business_id, params.token, params.sessionId) });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.get<Cart>(StorefrontEndpoints.cart.root(), cartContext(website, params));
 }
 
 /**
@@ -24,14 +33,12 @@ export async function addToCart(
   website: ProximaWebsiteResponse,
   params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
-  const url = new URL("/api/v1/cart/items", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token, params.sessionId) },
-    body: JSON.stringify({ product_variant_id: params.variantId, quantity: params.quantity }),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.post<Cart>(
+    StorefrontEndpoints.cart.items(),
+    { product_variant_id: params.variantId, quantity: params.quantity },
+    cartContext(website, params),
+  );
 }
 
 /** Update the quantity of an existing cart item. Set `quantity` to 0 to remove it. */
@@ -40,14 +47,12 @@ export async function updateCartItem(
   website: ProximaWebsiteResponse,
   params: { token?: string | null; sessionId?: string | null; variantId: number; quantity: number }
 ): Promise<Cart> {
-  const url = new URL(`/api/v1/cart/items/${params.variantId}`, config.baseUrl);
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token, params.sessionId) },
-    body: JSON.stringify({ quantity: params.quantity }),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.patch<Cart>(
+    StorefrontEndpoints.cart.item(params.variantId),
+    { quantity: params.quantity },
+    cartContext(website, params),
+  );
 }
 
 /** Remove a product variant from the cart entirely. */
@@ -56,13 +61,11 @@ export async function removeCartItem(
   website: ProximaWebsiteResponse,
   params: { token?: string | null; sessionId?: string | null; variantId: number }
 ): Promise<Cart> {
-  const url = new URL(`/api/v1/cart/items/${params.variantId}`, config.baseUrl);
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: cartHeaders(website.business_id, params.token, params.sessionId),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.delete<Cart>(
+    StorefrontEndpoints.cart.item(params.variantId),
+    cartContext(website, params),
+  );
 }
 
 /**
@@ -78,17 +81,12 @@ export async function mergeGuestCart(
   website: ProximaWebsiteResponse,
   params: { token: string; sessionId: string }
 ): Promise<Cart> {
-  const url = new URL("/api/v1/cart/merge", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "X-Business-ID": website.business_id,
-      "X-Session-ID": params.sessionId,
-      "Authorization": `Bearer ${params.token}`,
-    },
+  const client = createStorefrontClient(config);
+  return client.post<Cart>(StorefrontEndpoints.cart.merge(), undefined, {
+    businessId: website.business_id,
+    token: params.token,
+    headers: { 'X-Session-ID': params.sessionId },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -105,12 +103,9 @@ export async function validateCoupon(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { code: string; amount: number }
 ): Promise<CouponValidationResult> {
-  const url = new URL("/api/v1/commerce/coupons/validate", config.baseUrl);
-  url.searchParams.set("code", params.code);
-  url.searchParams.set("amount", String(params.amount));
-  const res = await fetch(url, {
-    headers: { "X-Business-ID": website.business_id },
+  const client = createStorefrontClient(config);
+  return client.get<CouponValidationResult>(StorefrontEndpoints.commerce.validateCoupon(), {
+    businessId: website.business_id,
+    query: { code: params.code, amount: params.amount },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }

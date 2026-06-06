@@ -1,3 +1,4 @@
+import { StorefrontEndpoints } from '../api/endpoints.js';
 import type { StorefrontAnalyticsConfig, StorefrontEventPayload, StorefrontEventType } from '../types/analytics.js';
 
 interface QueuedEvent {
@@ -61,7 +62,7 @@ class ProximaAnalytics {
   flush(beacon = false): void {
     if (!this.config || this.queue.length === 0) return;
     const batch = this.queue.splice(0);
-    const url = `${this.config.apiUrl}/api/v1/store/events`;
+    const url = `${this.config.apiUrl.replace(/\/$/, '')}${StorefrontEndpoints.analytics.events()}`;
     const body = JSON.stringify({ events: batch });
     const headers = { 'Content-Type': 'application/json', 'X-Business-ID': this.config.businessId };
 

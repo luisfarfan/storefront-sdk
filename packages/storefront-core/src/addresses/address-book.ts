@@ -1,4 +1,4 @@
-import { authHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import type { AddressInput, CustomerAddress, UbigeoResult } from '../types/address.js';
 
@@ -12,11 +12,12 @@ export async function fetchCustomerAddresses(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string }
 ): Promise<CustomerAddress[]> {
-  const res = await fetch(`${config.baseUrl}/api/v1/store/me/addresses/`, {
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  return client.get<CustomerAddress[]>(StorefrontEndpoints.buyer.addresses(), {
+    businessId: website.business_id,
+    token: params.token,
+    failPrefix: 'fetchCustomerAddresses failed',
   });
-  if (!res.ok) throw new Error(`fetchCustomerAddresses failed: ${res.status}`);
-  return res.json();
 }
 
 /** Save a new address to the customer's address book. */
@@ -25,16 +26,16 @@ export async function createCustomerAddress(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string; address: AddressInput }
 ): Promise<CustomerAddress> {
-  const res = await fetch(`${config.baseUrl}/api/v1/store/me/addresses/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(website.business_id, params.token) },
-    body: JSON.stringify(params.address),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw Object.assign(new Error("createCustomerAddress failed"), { status: res.status, detail: err.detail });
-  }
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.post<CustomerAddress>(
+    StorefrontEndpoints.buyer.addresses(),
+    params.address,
+    {
+      businessId: website.business_id,
+      token: params.token,
+      failLabel: 'createCustomerAddress failed',
+    },
+  );
 }
 
 /** Partially update a saved address. Only the fields included in `address` are changed. */
@@ -43,16 +44,16 @@ export async function updateCustomerAddress(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string; addressId: number; address: Partial<AddressInput> }
 ): Promise<CustomerAddress> {
-  const res = await fetch(`${config.baseUrl}/api/v1/store/me/addresses/${params.addressId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeaders(website.business_id, params.token) },
-    body: JSON.stringify(params.address),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw Object.assign(new Error("updateCustomerAddress failed"), { status: res.status, detail: err.detail });
-  }
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.patch<CustomerAddress>(
+    StorefrontEndpoints.buyer.address(params.addressId),
+    params.address,
+    {
+      businessId: website.business_id,
+      token: params.token,
+      failLabel: 'updateCustomerAddress failed',
+    },
+  );
 }
 
 /** Delete a saved address. Throws if the address does not exist. */
@@ -61,11 +62,12 @@ export async function deleteCustomerAddress(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string; addressId: number }
 ): Promise<void> {
-  const res = await fetch(`${config.baseUrl}/api/v1/store/me/addresses/${params.addressId}`, {
-    method: "DELETE",
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  await client.delete(StorefrontEndpoints.buyer.address(params.addressId), {
+    businessId: website.business_id,
+    token: params.token,
+    failPrefix: 'deleteCustomerAddress failed',
   });
-  if (!res.ok && res.status !== 204) throw new Error(`deleteCustomerAddress failed: ${res.status}`);
 }
 
 /** Mark an address as the customer's default. The previous default is unset automatically. */
@@ -74,12 +76,16 @@ export async function setDefaultAddress(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string; addressId: number }
 ): Promise<CustomerAddress> {
-  const res = await fetch(`${config.baseUrl}/api/v1/store/me/addresses/${params.addressId}/default`, {
-    method: "POST",
-    headers: authHeaders(website.business_id, params.token),
-  });
-  if (!res.ok) throw new Error(`setDefaultAddress failed: ${res.status}`);
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.post<CustomerAddress>(
+    StorefrontEndpoints.buyer.defaultAddress(params.addressId),
+    undefined,
+    {
+      businessId: website.business_id,
+      token: params.token,
+      failPrefix: 'setDefaultAddress failed',
+    },
+  );
 }
 
 /**
@@ -91,7 +97,9 @@ export async function searchUbigeo(
   config: Pick<ProximaApiConfig, "baseUrl">,
   params: { q: string }
 ): Promise<UbigeoResult[]> {
-  const res = await fetch(`${config.baseUrl}/api/v1/catalog/locations/ubigeos?q=${encodeURIComponent(params.q)}`);
-  if (!res.ok) return [];
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.get<UbigeoResult[]>(StorefrontEndpoints.catalog.ubigeos(), {
+    query: { q: params.q },
+    fallback: [],
+  });
 }

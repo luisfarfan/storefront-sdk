@@ -1,4 +1,4 @@
-import { apiError, authHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import type { WishlistItem } from '../types/wishlist.js';
 
@@ -15,12 +15,11 @@ export async function fetchWishlist(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string }
 ): Promise<WishlistItem[]> {
-  const url = new URL("/api/v1/store/me/wishlist", config.baseUrl);
-  const res = await fetch(url, {
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  return client.get<WishlistItem[]>(StorefrontEndpoints.buyer.wishlist(), {
+    businessId: website.business_id,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -37,18 +36,19 @@ export async function addToWishlist(
     notes?: string | null;
   }
 ): Promise<WishlistItem> {
-  const url = new URL("/api/v1/store/me/wishlist", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...authHeaders(website.business_id, params.token) },
-    body: JSON.stringify({
+  const client = createStorefrontClient(config);
+  return client.post<WishlistItem>(
+    StorefrontEndpoints.buyer.wishlist(),
+    {
       product_id: params.productId,
       variant_id: params.variantId ?? null,
       notes: params.notes ?? null,
-    }),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+    },
+    {
+      businessId: website.business_id,
+      token: params.token,
+    },
+  );
 }
 
 /**
@@ -60,10 +60,9 @@ export async function removeFromWishlist(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string; productId: string }
 ): Promise<void> {
-  const url = new URL(`/api/v1/store/me/wishlist/${params.productId}`, config.baseUrl);
-  const res = await fetch(url, {
-    method: "DELETE",
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  await client.delete(StorefrontEndpoints.buyer.wishlistItem(params.productId), {
+    businessId: website.business_id,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
 }

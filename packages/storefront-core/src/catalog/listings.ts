@@ -1,4 +1,4 @@
-import { apiError, storefrontHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import type {
   CategoryNavTreeResponse,
@@ -11,6 +11,17 @@ import type {
   StorefrontSearchResponse,
 } from '../types/catalog.js';
 import type { ProductListingFilters, ProductListingSortOption } from '../types/listing.js';
+
+function storefrontContext(
+  website: Pick<ProximaWebsiteResponse, "business_id" | "locale" | "currency">,
+  params: { locale?: string; currency?: string } = {},
+) {
+  return {
+    businessId: website.business_id,
+    locale: params.locale ?? website.locale,
+    currency: params.currency ?? website.currency,
+  };
+}
 
 /**
  * Search products by query string. Use this for the search bar, autocomplete,
@@ -25,18 +36,11 @@ export async function searchStorefront(
   website: Pick<ProximaWebsiteResponse, "business_id" | "locale" | "currency">,
   params: { q: string; limit?: number; locale?: string; currency?: string }
 ): Promise<StorefrontSearchResponse> {
-  const url = new URL("/api/v1/storefront/search", config.baseUrl);
-  url.searchParams.set("q", params.q);
-  if (params.limit !== undefined) url.searchParams.set("limit", String(params.limit));
-  const res = await fetch(url, {
-    headers: storefrontHeaders(
-      website.business_id,
-      params.locale ?? website.locale,
-      params.currency ?? website.currency,
-    ),
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontSearchResponse>(StorefrontEndpoints.catalog.search(), {
+    ...storefrontContext(website, params),
+    query: { q: params.q, limit: params.limit },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -54,22 +58,18 @@ export async function fetchStorefrontProducts(
     q?: string;
   } = {}
 ): Promise<StorefrontProductListingResponse> {
-  const url = new URL("/api/v1/storefront/products", config.baseUrl);
-  if (params.page)             url.searchParams.set("page", String(params.page));
-  if (params.pageSize)         url.searchParams.set("page_size", String(params.pageSize));
-  if (params.sort)             url.searchParams.set("sort", params.sort);
-  if (params.brand)            url.searchParams.set("brand", params.brand);
-  if (params.category)         url.searchParams.set("category", params.category);
-  if (params.q)                url.searchParams.set("q", params.q);
-  const res = await fetch(url, {
-    headers: storefrontHeaders(
-      website.business_id,
-      params.locale ?? website.locale,
-      params.currency ?? website.currency,
-    ),
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontProductListingResponse>(StorefrontEndpoints.catalog.products(), {
+    ...storefrontContext(website, params),
+    query: {
+      page: params.page,
+      page_size: params.pageSize,
+      sort: params.sort,
+      brand: params.brand,
+      category: params.category,
+      q: params.q,
+    },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -87,21 +87,20 @@ export async function fetchCategoryProducts(
     q?: string;
   }
 ): Promise<StorefrontCategoryListingResponse> {
-  const url = new URL(`/api/v1/storefront/categories/${encodeURIComponent(params.slug)}/products`, config.baseUrl);
-  if (params.page)     url.searchParams.set("page", String(params.page));
-  if (params.pageSize) url.searchParams.set("page_size", String(params.pageSize));
-  if (params.sort)     url.searchParams.set("sort", params.sort);
-  if (params.brand)    url.searchParams.set("brand", params.brand);
-  if (params.q)        url.searchParams.set("q", params.q);
-  const res = await fetch(url, {
-    headers: storefrontHeaders(
-      website.business_id,
-      params.locale ?? website.locale,
-      params.currency ?? website.currency,
-    ),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontCategoryListingResponse>(
+    StorefrontEndpoints.catalog.categoryProducts(params.slug),
+    {
+      ...storefrontContext(website, params),
+      query: {
+        page: params.page,
+        page_size: params.pageSize,
+        sort: params.sort,
+        brand: params.brand,
+        q: params.q,
+      },
+    },
+  );
 }
 
 /**
@@ -119,21 +118,20 @@ export async function fetchBrandProducts(
     q?: string;
   }
 ): Promise<StorefrontBrandListingResponse> {
-  const url = new URL(`/api/v1/storefront/brands/${encodeURIComponent(params.slug)}/products`, config.baseUrl);
-  if (params.page)     url.searchParams.set("page", String(params.page));
-  if (params.pageSize) url.searchParams.set("page_size", String(params.pageSize));
-  if (params.sort)     url.searchParams.set("sort", params.sort);
-  if (params.category) url.searchParams.set("category", params.category);
-  if (params.q)        url.searchParams.set("q", params.q);
-  const res = await fetch(url, {
-    headers: storefrontHeaders(
-      website.business_id,
-      params.locale ?? website.locale,
-      params.currency ?? website.currency,
-    ),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontBrandListingResponse>(
+    StorefrontEndpoints.catalog.brandProducts(params.slug),
+    {
+      ...storefrontContext(website, params),
+      query: {
+        page: params.page,
+        page_size: params.pageSize,
+        sort: params.sort,
+        category: params.category,
+        q: params.q,
+      },
+    },
+  );
 }
 
 /**
@@ -146,12 +144,11 @@ export async function fetchCategoriesDirectory(
   website: Pick<ProximaWebsiteResponse, "business_id" | "locale">,
   params: { locale?: string } = {}
 ): Promise<StorefrontCategoryDirectoryResponse> {
-  const url = new URL("/api/v1/storefront/categories", config.baseUrl);
-  const res = await fetch(url, {
-    headers: storefrontHeaders(website.business_id, params.locale ?? website.locale),
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontCategoryDirectoryResponse>(StorefrontEndpoints.catalog.categories(), {
+    businessId: website.business_id,
+    locale: params.locale ?? website.locale,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -166,13 +163,12 @@ export async function fetchCategoryNavTree(
   website: Pick<ProximaWebsiteResponse, "business_id" | "locale">,
   params: { maxDepth?: number; locale?: string } = {}
 ): Promise<CategoryNavTreeResponse> {
-  const url = new URL("/api/v1/storefront/categories/tree", config.baseUrl);
-  if (params.maxDepth !== undefined) url.searchParams.set("max_depth", String(params.maxDepth));
-  const res = await fetch(url, {
-    headers: storefrontHeaders(website.business_id, params.locale ?? website.locale),
+  const client = createStorefrontClient(config);
+  return client.get<CategoryNavTreeResponse>(StorefrontEndpoints.catalog.categoryTree(), {
+    businessId: website.business_id,
+    locale: params.locale ?? website.locale,
+    query: { max_depth: params.maxDepth },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -184,12 +180,11 @@ export async function fetchBrandsDirectory(
   website: Pick<ProximaWebsiteResponse, "business_id" | "locale">,
   params: { locale?: string } = {}
 ): Promise<StorefrontBrandDirectoryResponse> {
-  const url = new URL("/api/v1/storefront/brands", config.baseUrl);
-  const res = await fetch(url, {
-    headers: storefrontHeaders(website.business_id, params.locale ?? website.locale),
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontBrandDirectoryResponse>(StorefrontEndpoints.catalog.brands(), {
+    businessId: website.business_id,
+    locale: params.locale ?? website.locale,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -206,19 +201,20 @@ export async function fetchProductListing(
     page_size?: number;
   } = {}
 ): Promise<StorefrontProductListingResponse> {
-  const url = new URL("/api/v1/storefront/products", config.baseUrl);
-  if (params.filters?.brand) url.searchParams.set("brand", params.filters.brand);
-  if (params.filters?.category) url.searchParams.set("category", params.filters.category);
-  if (params.filters?.price_min != null) url.searchParams.set("price_min", String(params.filters.price_min));
-  if (params.filters?.price_max != null) url.searchParams.set("price_max", String(params.filters.price_max));
-  if (params.filters?.in_stock) url.searchParams.set("in_stock", "true");
-  if (params.sort) url.searchParams.set("sort", params.sort);
-  if (params.page) url.searchParams.set("page", String(params.page));
-  if (params.page_size) url.searchParams.set("page_size", String(params.page_size));
-
-  const res = await fetch(url, {
-    headers: storefrontHeaders(website.business_id, website.locale, website.currency),
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontProductListingResponse>(StorefrontEndpoints.catalog.products(), {
+    businessId: website.business_id,
+    locale: website.locale,
+    currency: website.currency,
+    query: {
+      brand: params.filters?.brand,
+      category: params.filters?.category,
+      price_min: params.filters?.price_min,
+      price_max: params.filters?.price_max,
+      in_stock: params.filters?.in_stock ? 'true' : undefined,
+      sort: params.sort,
+      page: params.page,
+      page_size: params.page_size,
+    },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }

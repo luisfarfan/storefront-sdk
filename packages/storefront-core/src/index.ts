@@ -15,6 +15,8 @@ export * from './types/guest-order.js';
 export * from './types/campaign.js';
 export * from './types/analytics.js';
 
+export * from './api/index.js';
+
 export * from './seo/page-seo.js';
 export * from './seo/json-ld.js';
 export * from './seo/sitemap.js';

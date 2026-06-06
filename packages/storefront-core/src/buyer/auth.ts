@@ -1,4 +1,4 @@
-import { apiError, authHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import {
   MissingFieldsError,
@@ -9,6 +9,13 @@ import {
   type MissingField,
   type RegistrationForm,
 } from '../types/buyer.js';
+
+function tenant(config: Pick<ProximaApiConfig, "baseUrl">, website: Pick<ProximaWebsiteResponse, "business_id">) {
+  return {
+    client: createStorefrontClient(config),
+    businessId: website.business_id,
+  };
+}
 
 /**
  * Fetch the merchant-configured registration form schema.
@@ -24,14 +31,8 @@ export async function fetchRegistrationForm(
   config: Pick<ProximaApiConfig, "baseUrl">,
   website: Pick<ProximaWebsiteResponse, "business_id">
 ): Promise<RegistrationForm> {
-  const url = new URL("/api/v1/store/auth/registration-form", config.baseUrl);
-  const res = await fetch(url, {
-    headers: { "X-Business-ID": website.business_id },
-  });
-  if (!res.ok) {
-    throw apiError(res.status, await res.json().catch(() => ({})));
-  }
-  return res.json();
+  const { client, businessId } = tenant(config, website);
+  return client.get<RegistrationForm>(StorefrontEndpoints.auth.registrationForm(), { businessId });
 }
 
 // ---------------------------------------------------------------------------
@@ -59,8 +60,8 @@ export async function registerBuyer(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: BuyerRegisterParams
 ): Promise<BuyerSession> {
-  const url = new URL("/api/v1/store/auth/register", config.baseUrl);
-  const body: Record<string, any> = {
+  const { client, businessId } = tenant(config, website);
+  const body: Record<string, unknown> = {
     email: params.email,
     password: params.password,
   };
@@ -75,31 +76,22 @@ export async function registerBuyer(
   if (params.address !== undefined)             body.address = params.address;
   if (params.captchaToken)                      body.captcha_token = params.captchaToken;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Business-ID": website.business_id },
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    // Parse MISSING_REQUIRED_FIELDS into structured MissingFieldsError
-    if (res.status === 422 && typeof data.detail === "string" && data.detail.startsWith("MISSING_REQUIRED_FIELDS:")) {
+  try {
+    return await client.post<BuyerSession>(StorefrontEndpoints.auth.register(), body, { businessId });
+  } catch (e) {
+    const err = e as Error & { status?: number; data?: { detail?: string } };
+    if (err.status === 422 && typeof err.data?.detail === "string" && err.data.detail.startsWith("MISSING_REQUIRED_FIELDS:")) {
       try {
-        const raw = data.detail.replace("MISSING_REQUIRED_FIELDS:", "").trim();
-        // API returns Python repr: [{'field': 'phone', 'msg': 'FIELD_REQUIRED'}, ...]
-        // Safe to JSON.parse after normalizing Python single-quotes
+        const raw = err.data.detail.replace("MISSING_REQUIRED_FIELDS:", "").trim();
         const normalized = raw.replace(/'/g, '"');
         const missingFields: MissingField[] = JSON.parse(normalized);
         throw new MissingFieldsError(missingFields);
-      } catch (e) {
-        if (e instanceof MissingFieldsError) throw e;
-        // If parsing failed, fall through to generic error
+      } catch (parseErr) {
+        if (parseErr instanceof MissingFieldsError) throw parseErr;
       }
     }
-    throw apiError(res.status, data);
+    throw e;
   }
-  return res.json();
 }
 
 /**
@@ -112,16 +104,10 @@ export async function loginBuyer(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { email: string; password: string; captchaToken?: string | null }
 ): Promise<BuyerSession> {
-  const url = new URL("/api/v1/store/auth/login", config.baseUrl);
-  const body: Record<string, any> = { email: params.email, password: params.password };
+  const { client, businessId } = tenant(config, website);
+  const body: Record<string, unknown> = { email: params.email, password: params.password };
   if (params.captchaToken) body.captcha_token = params.captchaToken;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Business-ID": website.business_id },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
+  return client.post<BuyerSession>(StorefrontEndpoints.auth.login(), body, { businessId });
 }
 
 /** Invalidate the current session server-side. Best-effort — always clear the cookie too. */
@@ -130,13 +116,11 @@ export async function logoutBuyer(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string }
 ): Promise<void> {
-  const url = new URL("/api/v1/store/auth/logout", config.baseUrl);
-  await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${params.token}`,
-      "X-Business-ID": website.business_id,
-    },
+  const { client, businessId } = tenant(config, website);
+  await client.post(StorefrontEndpoints.auth.logout(), undefined, {
+    businessId,
+    token: params.token,
+    ignoreErrors: true,
   });
 }
 
@@ -159,14 +143,11 @@ export async function refreshBuyerToken(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { refreshToken: string }
 ): Promise<BuyerSession> {
-  const url = new URL("/api/v1/store/auth/refresh", config.baseUrl);
-  url.searchParams.set("refresh_token", params.refreshToken);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "X-Business-ID": website.business_id },
+  const { client, businessId } = tenant(config, website);
+  return client.post<BuyerSession>(StorefrontEndpoints.auth.refresh(), undefined, {
+    businessId,
+    query: { refresh_token: params.refreshToken },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /** Fetch the authenticated customer's full profile. */
@@ -175,12 +156,11 @@ export async function fetchBuyerProfile(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string }
 ): Promise<BuyerProfile> {
-  const url = new URL("/api/v1/store/me", config.baseUrl);
-  const res = await fetch(url, {
-    headers: authHeaders(website.business_id, params.token),
+  const { client, businessId } = tenant(config, website);
+  return client.get<BuyerProfile>(StorefrontEndpoints.buyer.me(), {
+    businessId,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /**
@@ -192,8 +172,8 @@ export async function updateBuyerProfile(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string } & BuyerProfileUpdateParams
 ): Promise<BuyerProfile> {
-  const url = new URL("/api/v1/store/me/profile", config.baseUrl);
-  const body: Record<string, any> = {};
+  const { client, businessId } = tenant(config, website);
+  const body: Record<string, unknown> = {};
   if (params.fullName !== undefined)            body.full_name = params.fullName;
   if (params.phone !== undefined)               body.phone = params.phone;
   if (params.docType !== undefined)             body.doc_type = params.docType;
@@ -203,13 +183,10 @@ export async function updateBuyerProfile(
   if (params.avatarUrl !== undefined)           body.avatar_url = params.avatarUrl;
   if (params.password !== undefined)            body.password = params.password;
 
-  const res = await fetch(url, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeaders(website.business_id, params.token) },
-    body: JSON.stringify(body),
+  return client.patch<BuyerProfile>(StorefrontEndpoints.buyer.profile(), body, {
+    businessId,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 // ---------------------------------------------------------------------------
@@ -225,13 +202,12 @@ export async function forgotPassword(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { email: string; captchaToken?: string | null }
 ): Promise<void> {
-  const url = new URL("/api/v1/store/auth/forgot-password", config.baseUrl);
-  const body: Record<string, any> = { email: params.email };
+  const { client, businessId } = tenant(config, website);
+  const body: Record<string, unknown> = { email: params.email };
   if (params.captchaToken) body.captcha_token = params.captchaToken;
-  await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Business-ID": website.business_id },
-    body: JSON.stringify(body),
+  await client.post(StorefrontEndpoints.auth.forgotPassword(), body, {
+    businessId,
+    ignoreErrors: true,
   });
 }
 
@@ -245,13 +221,11 @@ export async function resetPassword(
   config: Pick<ProximaApiConfig, "baseUrl">,
   params: { token: string; newPassword: string }
 ): Promise<void> {
-  const url = new URL("/api/v1/store/auth/reset-password", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: params.token, new_password: params.newPassword }),
+  const client = createStorefrontClient(config);
+  await client.post(StorefrontEndpoints.auth.resetPassword(), {
+    token: params.token,
+    new_password: params.newPassword,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
 }
 
 /**
@@ -262,13 +236,8 @@ export async function verifyEmail(
   config: Pick<ProximaApiConfig, "baseUrl">,
   params: { token: string }
 ): Promise<void> {
-  const url = new URL("/api/v1/store/auth/verify-email", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: params.token }),
-  });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
+  const client = createStorefrontClient(config);
+  await client.post(StorefrontEndpoints.auth.verifyEmail(), { token: params.token });
 }
 
 /**
@@ -280,10 +249,9 @@ export async function resendVerification(
   website: Pick<ProximaWebsiteResponse, "business_id">,
   params: { token: string }
 ): Promise<void> {
-  const url = new URL("/api/v1/store/auth/resend-verification", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: authHeaders(website.business_id, params.token),
+  const { client, businessId } = tenant(config, website);
+  await client.post(StorefrontEndpoints.auth.resendVerification(), undefined, {
+    businessId,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
 }

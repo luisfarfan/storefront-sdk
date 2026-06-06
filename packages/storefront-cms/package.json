@@ -27,6 +27,9 @@
     "typescript": "^6.0.3",
     "vitest": "^4.1.6"
   },
+  "dependencies": {
+    "@proxima-io/storefront-core": "workspace:*"
+  },
   "publishConfig": {
     "access": "public"
   }

@@ -1,4 +1,4 @@
-import { apiError, authHeaders, cartHeaders } from '../internal/http.js';
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type { ProximaApiConfig, ProximaWebsiteResponse } from '../types/cms.js';
 import type { CheckoutRequest } from '../types/cart.js';
 import type { Order, OrderListResponse } from '../types/order.js';
@@ -16,14 +16,11 @@ export async function createOrder(
   website: ProximaWebsiteResponse,
   params: { token: string; checkout: CheckoutRequest }
 ): Promise<Order> {
-  const url = new URL("/api/v1/checkout", config.baseUrl);
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...cartHeaders(website.business_id, params.token) },
-    body: JSON.stringify(params.checkout),
+  const client = createStorefrontClient(config);
+  return client.post<Order>(StorefrontEndpoints.checkout(), params.checkout, {
+    businessId: website.business_id,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /** Fetch the authenticated customer's order history, paginated. */
@@ -32,14 +29,12 @@ export async function fetchOrders(
   website: ProximaWebsiteResponse,
   params: { token: string; page?: number; size?: number }
 ): Promise<OrderListResponse> {
-  const url = new URL("/api/v1/store/me/orders", config.baseUrl);
-  if (params.page) url.searchParams.set("page", String(params.page));
-  if (params.size) url.searchParams.set("size", String(params.size));
-  const res = await fetch(url, {
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  return client.get<OrderListResponse>(StorefrontEndpoints.buyer.orders(), {
+    businessId: website.business_id,
+    token: params.token,
+    query: { page: params.page, size: params.size },
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }
 
 /** Fetch a single order by ID. Works for authenticated customers and guests with the receipt token. */
@@ -48,10 +43,9 @@ export async function fetchOrder(
   website: ProximaWebsiteResponse,
   params: { token: string; orderId: string }
 ): Promise<Order> {
-  const url = new URL(`/api/v1/orders/${params.orderId}`, config.baseUrl);
-  const res = await fetch(url, {
-    headers: authHeaders(website.business_id, params.token),
+  const client = createStorefrontClient(config);
+  return client.get<Order>(StorefrontEndpoints.orders.byId(params.orderId), {
+    businessId: website.business_id,
+    token: params.token,
   });
-  if (!res.ok) throw apiError(res.status, await res.json().catch(() => ({})));
-  return res.json();
 }

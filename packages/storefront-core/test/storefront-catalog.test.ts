@@ -287,7 +287,7 @@ describe('mergeGuestCart', () => {
     mockFetch(CART);
     await mergeGuestCart(CONFIG, WEBSITE, { token: 'tok-abc', sessionId: 'sess-xyz' });
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect(String(url)).toContain('/cart/merge');
+    expect(String(url)).toContain('/storefront/cart/merge');
     expect(init.method).toBe('POST');
     expect(init.headers['X-Session-ID']).toBe('sess-xyz');
     expect(init.headers['Authorization']).toBe('Bearer tok-abc');
@@ -326,6 +326,6 @@ describe('validateCoupon', () => {
     const [url] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(String(url)).toContain('code=SAVE10');
     expect(String(url)).toContain('amount=200.5');
-    expect(String(url)).toContain('/commerce/coupons/validate');
+    expect(String(url)).toContain('/storefront/coupons/validate');
   });
 });

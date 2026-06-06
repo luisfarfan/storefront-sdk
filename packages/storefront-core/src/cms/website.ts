@@ -1,3 +1,4 @@
+import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type {
   ProximaApiConfig,
   ProximaCompositionResponse,
@@ -14,13 +15,11 @@ export async function fetchBusinessProfile(
   config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
   businessId: string,
 ): Promise<StorefrontBusinessProfile> {
-  const url = new URL("/api/v1/storefront/business/profile", config.baseUrl);
-  url.searchParams.set("business_id", businessId);
-  const headers: Record<string, string> = {};
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Business profile fetch failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontBusinessProfile>(StorefrontEndpoints.business.profile(), {
+    query: { business_id: businessId },
+    failPrefix: 'Business profile fetch failed',
+  });
 }
 
 /**
@@ -34,13 +33,11 @@ export async function fetchCampaigns(
   config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
   businessId: string,
 ): Promise<StorefrontCampaign[]> {
-  const url = new URL("/api/v1/storefront/campaigns", config.baseUrl);
-  url.searchParams.set("business_id", businessId);
-  const headers: Record<string, string> = {};
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Campaigns fetch failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontCampaign[]>(StorefrontEndpoints.campaigns.list(), {
+    query: { business_id: businessId },
+    failPrefix: 'Campaigns fetch failed',
+  });
 }
 
 /**
@@ -54,21 +51,19 @@ export async function fetchCampaignBySlug(
   businessId: string,
   slug: string,
 ): Promise<StorefrontCampaign | null> {
-  const url = new URL(`/api/v1/storefront/campaigns/${encodeURIComponent(slug)}`, config.baseUrl);
-  url.searchParams.set("business_id", businessId);
-  const headers: Record<string, string> = {};
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Campaign fetch failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<StorefrontCampaign | null>(StorefrontEndpoints.campaigns.bySlug(slug), {
+    query: { business_id: businessId },
+    notFound: 'null',
+    failPrefix: 'Campaign fetch failed',
+  });
 }
 
 /**
  * Fetch the merchant's enabled payment methods. Tenant-wide — call once per
  * request and cache on `Astro.locals` so the footer reads from memory.
  *
- * Backed by `GET /store/commerce/payment-instructions` (public storefront
+ * Backed by `GET /storefront/payment-instructions` (public storefront
  * endpoint — same surface used by the checkout flow).
  *
  * @example
@@ -81,25 +76,20 @@ export async function fetchPaymentMethods(
   config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
   businessId: string,
 ): Promise<StorefrontPaymentMethod[]> {
-  const url = new URL("/api/v1/store/commerce/payment-instructions", config.baseUrl);
-  const headers: Record<string, string> = {
-    "X-Business-ID": businessId,
-  };
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Payment methods fetch failed: ${response.status}`);
-  const data = await response.json() as { items?: StorefrontPaymentMethod[] };
+  const client = createStorefrontClient(config);
+  const data = await client.get<{ items?: StorefrontPaymentMethod[] }>(
+    StorefrontEndpoints.commerce.paymentInstructions(),
+    { businessId, failPrefix: 'Payment methods fetch failed' },
+  );
   return data.items ?? [];
 }
 
 /** List all websites for a service-key authenticated caller. Useful for build-time scripts. */
 export async function fetchProximaWebsiteList(config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">): Promise<ProximaWebsiteResponse[]> {
-  const url = new URL("/api/v1/storefront/cms/websites", config.baseUrl);
-  const headers: Record<string, string> = {};
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Website list failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<ProximaWebsiteResponse[]>(StorefrontEndpoints.cms.websites(), {
+    failPrefix: 'Website list failed',
+  });
 }
 
 /**
@@ -112,13 +102,11 @@ export async function fetchProximaWebsiteList(config: Pick<ProximaApiConfig, "ba
 export async function fetchProximaWebsite(
   config: Pick<ProximaApiConfig, "baseUrl" | "domain" | "serviceKey"> & { host?: string }
 ): Promise<ProximaWebsiteResponse> {
-  const url = new URL("/api/v1/storefront/cms/websites/resolve", config.baseUrl);
-  url.searchParams.set("host", config.host || config.domain);
-  const headers: Record<string, string> = {};
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Website resolve failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<ProximaWebsiteResponse>(StorefrontEndpoints.cms.resolveWebsite(), {
+    query: { host: config.host || config.domain },
+    failPrefix: 'Website resolve failed',
+  });
 }
 
 /**
@@ -170,21 +158,23 @@ export async function fetchProximaComposition(
 ): Promise<ProximaCompositionResponse> {
   const locale = website.locale ?? "es";
   const currency = website.currency ?? "PEN";
-  const url = new URL(`/api/v1/storefront/cms/websites/${website.id}/pages/composition`, config.baseUrl);
-  url.searchParams.set("path", config.path);
-  url.searchParams.set("locale", locale);
-  url.searchParams.set("business_id", website.business_id);
-  if (config.variantId)   url.searchParams.set("variant_id", config.variantId);
-  if (config.previewToken) url.searchParams.set("preview_token", config.previewToken);
-  const headers: Record<string, string> = {
-    "X-Business-ID": website.business_id,
-    "Accept-Language": locale,
-    "X-Currency": currency,
-  };
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Composition failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<ProximaCompositionResponse>(
+    StorefrontEndpoints.cms.composition(website.id),
+    {
+      businessId: website.business_id,
+      locale,
+      currency,
+      query: {
+        path: config.path,
+        locale,
+        business_id: website.business_id,
+        variant_id: config.variantId,
+        preview_token: config.previewToken,
+      },
+      failPrefix: 'Composition failed',
+    },
+  );
 }
 
 /**
@@ -196,15 +186,12 @@ export async function fetchProximaProducts(
   config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
   website: ProximaWebsiteResponse,
 ): Promise<ProximaProductListResponse> {
-  const url = new URL("/api/v1/products", config.baseUrl);
-  url.searchParams.set("size", "12");
-  const headers: Record<string, string> = {
-    "X-Business-ID": website.business_id,
-    "Accept-Language": website.locale ?? "es",
-    "X-Currency": website.currency ?? "PEN",
-  };
-  if (config.serviceKey) headers["Authorization"] = `Bearer ${config.serviceKey}`;
-  const response = await fetch(url, { headers });
-  if (!response.ok) throw new Error(`Products failed: ${response.status}`);
-  return response.json();
+  const client = createStorefrontClient(config);
+  return client.get<ProximaProductListResponse>(StorefrontEndpoints.catalog.legacyProducts(), {
+    businessId: website.business_id,
+    locale: website.locale ?? "es",
+    currency: website.currency ?? "PEN",
+    query: { size: 12 },
+    failPrefix: 'Products failed',
+  });
 }

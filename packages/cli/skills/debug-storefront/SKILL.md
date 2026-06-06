@@ -99,7 +99,7 @@ curl -s "http://localhost:8000/api/v1/storefront/categories/<slug>/products?page
 **Verificar:**
 ```bash
 SESSION=$(uuidgen)
-curl -s -X POST "http://localhost:8000/api/v1/cart/items" \
+curl -s -X POST "http://localhost:8000/api/v1/storefront/cart/items" \
   -H "X-Business-ID: <BIZ>" -H "Content-Type: application/json" -H "X-Session-ID: $SESSION" \
   -d '{"product_variant_id": <ID>, "quantity": 1}'
 # {"detail":{"code":"NOT_STOREFRONT_SELLABLE","missing_fields":["stock"]}}
