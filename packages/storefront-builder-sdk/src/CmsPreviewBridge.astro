@@ -1,4 +1,10 @@
 ---
+// El chrome de inspección (outlines/badges de secciones y atributos editables).
+// Se inyecta inline SOLO cuando el bridge está habilitado (preview), así que no
+// agrega peso a las páginas que ve el cliente. Va junto al bridge para que
+// cualquier storefront que use el bridge tenga el resaltado sin imports extra.
+import previewCss from './preview.css?raw';
+
 interface Props {
   enabled?: boolean;
   path: string;
@@ -13,6 +19,8 @@ const readyPayload = JSON.stringify({
   preview: enabled,
 });
 ---
+
+{enabled && <style is:inline set:html={previewCss}></style>}
 
 {enabled ? (
   <script is:inline define:vars={{ readyPayload, builderOrigin }}>
@@ -74,6 +82,15 @@ const readyPayload = JSON.stringify({
         });
         send('cms:mode-change', { mode: previewMode });
       };
+
+      // `data-cms-preview="true"` es el gate maestro de TODO el chrome de
+      // inspección (preview.css). Se activa SOLO después de que el contenido SSR
+      // pintó (doble rAF). Si se monta en la primera pintura, en iframes
+      // cross-origin el sitio queda en blanco hasta un recalc. Diferirlo deja que
+      // el sitio pinte limpio y recién entonces aparece el highlight.
+      const enablePreviewChrome = () => withBody((body) => {
+        body.dataset.cmsPreview = 'true';
+      });
 
       /** Matches builder `PreviewBridgeService.sendSetContentZoom` clamp (0.05–1). */
       const applyContentZoom = (rawScale) => {
@@ -511,7 +528,25 @@ const readyPayload = JSON.stringify({
         
         const anchorElement = effectiveAttributeElement || section;
         const anchorInParentViewport = getAnchorRectInParentViewport(anchorElement);
-        
+        // Rect del elemento relativo al viewport del iframe. Siempre calculable
+        // (incluso cross-origin, donde `window.frameElement` es null y
+        // `anchorInParentViewport` queda null). El builder le suma el offset del
+        // iframe del canvas para posicionar su popover WYSIWYG.
+        const elementRectInFrame = (() => {
+          try {
+            const r =
+              anchorElement && typeof anchorElement.getBoundingClientRect === 'function'
+                ? anchorElement.getBoundingClientRect()
+                : null;
+            return r && r.width > 0 && r.height > 0
+              ? { left: r.left, top: r.top, width: r.width, height: r.height }
+              : null;
+          } catch (e) {
+            return null;
+          }
+        })();
+        const positionPayload = { anchorInParentViewport, elementRectInFrame };
+
         const anchor = target.closest('a[href]');
         const itemPayload = getItemPayload(target);
 
@@ -540,18 +575,18 @@ const readyPayload = JSON.stringify({
                   ...payload,
                   ...(!isComplex ? (itemPayload || {}) : {}),
                   ...effectiveAttributePayload,
-                  anchorInParentViewport,
+                  ...positionPayload,
                 });
               } else if (itemPayload?.itemType || itemPayload?.itemIndex != null || itemPayload?.itemKey) {
                 send('cms:select-item', {
                   ...payload,
                   ...itemPayload,
-                  anchorInParentViewport,
+                  ...positionPayload,
                 });
               } else {
                 send('cms:select-section', {
                   ...payload,
-                  anchorInParentViewport,
+                  ...positionPayload,
                 });
               }
             }
@@ -578,7 +613,7 @@ const readyPayload = JSON.stringify({
             ...payload,
             ...(!isComplex ? (itemPayload || {}) : {}),
             ...effectiveAttributePayload,
-            anchorInParentViewport,
+            ...positionPayload,
           });
           return;
         }
@@ -587,14 +622,14 @@ const readyPayload = JSON.stringify({
           send('cms:select-item', {
             ...payload,
             ...itemPayload,
-            anchorInParentViewport,
+            ...positionPayload,
           });
           return;
         }
 
         send('cms:select-section', {
           ...payload,
-          anchorInParentViewport,
+          ...positionPayload,
         });
       };
 
@@ -826,6 +861,8 @@ const readyPayload = JSON.stringify({
       };
 
       applyPreviewMode(previewMode);
+      // Montar el chrome de inspección recién después del primer paint del sitio.
+      requestAnimationFrame(() => requestAnimationFrame(enablePreviewChrome));
       document.addEventListener('click', onClick, true);
       document.addEventListener('mouseover', onMouseOver, true);
       document.addEventListener('dblclick', onDblClick, true);
