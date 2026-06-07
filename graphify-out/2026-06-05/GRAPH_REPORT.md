@@ -1,16 +1,16 @@
 # Graph Report - proxima-storefront-sdk  (2026-06-05)
 
 ## Corpus Check
-- 266 files · ~137,859 words
+- 236 files · ~137,286 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2925 nodes · 3684 edges · 270 communities (202 shown, 68 thin omitted)
-- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 118 edges (avg confidence: 0.84)
+- 2873 nodes · 3516 edges · 262 communities (195 shown, 67 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 126 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `4fad461a`
+- Built from commit: `678d4a5b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -185,13 +185,6 @@
 - [[_COMMUNITY_createStorefrontDataSource fixtu...|createStorefrontDataSource fixtu...]]
 - [[_COMMUNITY_validateFixtureBundle tests|validateFixtureBundle tests]]
 - [[_COMMUNITY_makeBuilderPreviewWebsite tests|makeBuilderPreviewWebsite tests]]
-- [[_COMMUNITY_Community 176|Community 176]]
-- [[_COMMUNITY_Community 177|Community 177]]
-- [[_COMMUNITY_Community 178|Community 178]]
-- [[_COMMUNITY_Community 179|Community 179]]
-- [[_COMMUNITY_Community 180|Community 180]]
-- [[_COMMUNITY_Community 181|Community 181]]
-- [[_COMMUNITY_Community 182|Community 182]]
 - [[_COMMUNITY_Website Deploy API Spec|Website Deploy API Spec]]
 - [[_COMMUNITY_Wishlist Spec|Wishlist Spec]]
 - [[_COMMUNITY_Community 185|Community 185]]
@@ -212,7 +205,6 @@
 - [[_COMMUNITY_Community 200|Community 200]]
 - [[_COMMUNITY_Community 201|Community 201]]
 - [[_COMMUNITY_Community 202|Community 202]]
-- [[_COMMUNITY_Community 203|Community 203]]
 - [[_COMMUNITY_Community 204|Community 204]]
 - [[_COMMUNITY_Community 205|Community 205]]
 - [[_COMMUNITY_Community 206|Community 206]]
@@ -250,7 +242,6 @@
 - [[_COMMUNITY_Community 238|Community 238]]
 - [[_COMMUNITY_Community 239|Community 239]]
 - [[_COMMUNITY_Community 240|Community 240]]
-- [[_COMMUNITY_Community 241|Community 241]]
 - [[_COMMUNITY_Community 242|Community 242]]
 - [[_COMMUNITY_Community 244|Community 244]]
 - [[_COMMUNITY_Community 245|Community 245]]
@@ -266,6 +257,7 @@
 - [[_COMMUNITY_Community 255|Community 255]]
 - [[_COMMUNITY_Community 256|Community 256]]
 - [[_COMMUNITY_Community 259|Community 259]]
+- [[_COMMUNITY_Community 263|Community 263]]
 - [[_COMMUNITY_Community 265|Community 265]]
 - [[_COMMUNITY_Community 266|Community 266]]
 - [[_COMMUNITY_Community 268|Community 268]]
@@ -274,26 +266,26 @@
 ## God Nodes (most connected - your core abstractions)
 1. `createStorefrontClient()` - 49 edges
 2. `apiError()` - 36 edges
-3. `01 — Modelo mental de Proxima` - 19 edges
-4. `fetchProximaWebsite()` - 18 edges
-5. `authHeaders()` - 18 edges
-6. `TemplateRegistryClient` - 18 edges
+3. `TemplateRegistryClient` - 19 edges
+4. `01 — Modelo mental de Proxima` - 19 edges
+5. `fetchProximaWebsite()` - 18 edges
+6. `authHeaders()` - 18 edges
 7. `discoverWorkspaces()` - 17 edges
 8. `Tipos de atributos CMS — runtime reference` - 17 edges
 9. `Skill: debug-storefront` - 16 edges
-10. `06 — Builder Integration` - 16 edges
+10. `run()` - 16 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `PATCH()` --calls--> `updateBuyerProfile()`  [INFERRED]
+  examples/storefront-starter/src/pages/api/buyer/profile.ts → packages/storefront-core/src/buyer/auth.ts
 - `add-section agent skill` --references--> `attributeTypes`  [INFERRED]
   .claude/skills/add-section/SKILL.md → packages/template-schema/src/index.ts
+- `add-section agent skill` --references--> `websiteDeployCommand()`  [EXTRACTED]
+  .claude/skills/add-section/SKILL.md → packages/templateizer/src/index.ts
 - `SECTION_MAP section registry` --semantically_similar_to--> `SECTION_REGISTRY section type key sync`  [INFERRED] [semantically similar]
   .claude/skills/create-storefront/SKILL.md → docs/01-mental-model.md
 - `proxima deploy CLI command` --semantically_similar_to--> `POST /api/v1/admin/cms/websites/deploy`  [INFERRED] [semantically similar]
   docs/09-deploy.md → .claude/skills/website-deploy/SKILL.md
-- `Deploy syncs schemas not merchant content` --semantically_similar_to--> `website-deploy vs seed scripts distinction`  [INFERRED] [semantically similar]
-  docs/09-deploy.md → .claude/skills/website-deploy/SKILL.md
-- `proxima skills install command` --semantically_similar_to--> `proxima skills list install CLI`  [INFERRED] [semantically similar]
-  README.md → docs/10-agent-skills.md
 
 ## Import Cycles
 - None detected.
@@ -324,27 +316,27 @@
 - **Website deploy flow** — templateizer_readme_website_deploy_command, template_registry_client_readme_websitedeployclient, template_schema_readme_proxima_website_json, template_schema_readme_websitedeploymanifest [EXTRACTED 1.00]
 - **Marketplace template publish flow** — templateizer_readme_register_command, templateizer_readme_publish_command, template_registry_client_readme_templateregistryclient, template_schema_readme_proxima_template_json, templateizer_readme_proxima_marketplace [INFERRED 0.85]
 
-## Communities (270 total, 68 thin omitted)
+## Communities (262 total, 67 thin omitted)
 
 ### Community 1 - "Templateizer CLI"
-Cohesion: 0.19
-Nodes (12): Fixture vs Live Data Routing, createStorefrontDataSource(), FixtureBrandListingParams, FixtureCartMutationParams, FixtureCatalogItem, FixtureListingParams, FixtureSearchParams, resolveStorefrontDataSourceForRequest() (+4 more)
+Cohesion: 0.08
+Nodes (61): isCI, run(), artifactDir(), buildArtifacts(), buildDeploymentConfig(), buildReport(), buildTemplateStructure(), collectManifestPaths() (+53 more)
 
 ### Community 2 - "Starter API Routes"
-Cohesion: 0.25
-Nodes (12): ../components/ProductCard.astro, ../layouts/BaseLayout.astro, EditableSection builder preview wrapper, Section type key must match Proxima admin, SECTION_MAP, ProductGridSection client-side load-more, SearchSection doSearch client handler, Smart collection resolved attribute pattern (+4 more)
+Cohesion: 0.05
+Nodes (48): GET /api/buyer/profile, POST /api/buyer/refresh, POST /api/cart/merge, GET /api/coupon/validate, POST(), ../components/CartDrawer.astro, badge, body (+40 more)
 
 ### Community 3 - "Builder Inspect Chrome"
 Cohesion: 0.06
 Nodes (47): Builder Inspect Chrome, CMS Preview Mode, CmsSectionMeta, CmsSectionRecord, CmsShellSectionMap, findSectionByType(), getAttributeMeta(), getPreviewRobots() (+39 more)
 
 ### Community 4 - "Fixture Commerce Data"
-Cohesion: 0.16
-Nodes (21): brandSlugFromCatalog(), buildBrandListing(), buildCategoryListing(), buildFacets(), buildLineMetadata(), buildProductListing(), catalogItemToSummary(), categorySlugFromCatalog() (+13 more)
+Cohesion: 0.05
+Nodes (71): analytics, Fixture vs Live Data Routing, brandSlugFromCatalog(), buildBrandListing(), buildCategoryListing(), buildFacets(), buildLineMetadata(), buildProductListing() (+63 more)
 
 ### Community 5 - "Proxima CLI Workspace"
 Cohesion: 0.07
-Nodes (53): proxima CLI bin entrypoint, printHelp(), isKnownCommand(), isCI, run(), printHelp(), ALIASES, CLI command aliases deploy and template shortcuts (+45 more)
+Nodes (51): proxima CLI bin entrypoint, isCI, run(), printHelp(), ALIASES, CLI command aliases deploy and template shortcuts, delegateTemplateizer(), extractTarget() (+43 more)
 
 ### Community 6 - "Agent Skills & Docs"
 Cohesion: 0.05
@@ -355,8 +347,8 @@ Cohesion: 0.05
 Nodes (37): devDependencies, @changesets/cli, turbo, typescript, name, packageManager, private, scripts (+29 more)
 
 ### Community 8 - "Buyer Auth & Cart"
-Cohesion: 0.11
-Nodes (18): POST /api/buyer/login, POST /api/cart/add, POST /api/cart/checkout, GET /api/cart, DELETE /api/cart/remove, GET/POST/DELETE /api/wishlist, CartDrawer lateral cart UI, loadCart() (+10 more)
+Cohesion: 0.07
+Nodes (30): POST /api/buyer/login, POST /api/cart/add, POST /api/cart/checkout, GET /api/cart, DELETE /api/cart/remove, GET/POST/DELETE /api/wishlist, CartDrawer lateral cart UI, loadCart() (+22 more)
 
 ### Community 9 - "Website Deploy Client"
 Cohesion: 0.09
@@ -371,12 +363,12 @@ Cohesion: 0.07
 Nodes (29): bin, proxima-templateizer, dependencies, @clack/prompts, picocolors, @proxima-io/template-registry-client, @proxima-io/template-schema, description (+21 more)
 
 ### Community 12 - "Template Schema Zod"
-Cohesion: 0.08
+Cohesion: 0.09
 Nodes (25): attributeSchemaItemSchema, deploymentConfigSchema, findPlaceholderReferences(), jsonObject, jsonValue, normalizeKey(), previewImageSchema, rejectSensitiveKeys() (+17 more)
 
 ### Community 13 - "Buyer API Handlers"
-Cohesion: 0.40
-Nodes (4): config, context, POST(), processBuyerCheckout()
+Cohesion: 0.50
+Nodes (3): config, context, POST()
 
 ### Community 14 - "Commerce Types"
 Cohesion: 0.08
@@ -391,12 +383,12 @@ Cohesion: 0.10
 Nodes (20): animation_config, capabilities, category, _comment, deployment_config, preview_url, production_url, runtime_kind (+12 more)
 
 ### Community 17 - "Buyer Registration"
-Cohesion: 0.07
-Nodes (67): createAdminClient(), artifactDir(), buildArtifacts(), buildReport(), inferAttributes(), inferSections(), inferSmartCollections(), runArtifactCommand() (+59 more)
+Cohesion: 0.50
+Nodes (3): config, context, DELETE()
 
 ### Community 18 - "Catalog API Client"
-Cohesion: 0.08
-Nodes (23): analytics, ProximaAnalytics, QueuedEvent, AdminClient, AdminClientConfig, parseTemplateList(), AdminEndpoints, StorefrontEndpoints (+15 more)
+Cohesion: 0.17
+Nodes (11): StorefrontEndpoints, appendQuery(), buildHeaders(), handleErrorResponse(), JsonRequestOptions, parseJsonBody(), QueryParams, StorefrontClient (+3 more)
 
 ### Community 19 - "Storefront Starter App"
 Cohesion: 0.11
@@ -428,11 +420,11 @@ Nodes (15): compilerOptions, declaration, declarationMap, esModuleInterop, exact
 
 ### Community 26 - "fetchCustomerAddresses SDK function"
 Cohesion: 0.14
-Nodes (16): fetchCustomerAddresses SDK function, preview.css unified inspect chrome, @proxima-io/storefront-builder-sdk, @proxima-io/storefront-cms, @proxima-io/storefront-commerce, @proxima-io/storefront-core, file: relative dependency linking, poc-migration capability (+8 more)
+Nodes (15): fetchCustomerAddresses SDK function, ¿A quién va dirigida?, El proyecto starter, Guía para developers — Proxima Storefront, SDK — Paquetes disponibles, @proxima-io/storefront-cms, @proxima-io/storefront-commerce, @proxima-io/storefront-core (+7 more)
 
 ### Community 27 - "Fixture vs Live Data Routing"
-Cohesion: 0.12
-Nodes (15): CategoryNavNode, StorefrontAppliedCampaign, StorefrontBrandDirectoryItem, StorefrontBrandDirectoryResponse, StorefrontBrandListingResponse, StorefrontBrandSummary, StorefrontCategoryDirectoryItem, StorefrontCategoryDirectoryResponse (+7 more)
+Cohesion: 0.17
+Nodes (11): file: relative dependency linking, poc-migration capability, proxima-managed-storefront-poc repo, Context, Goals / Non-Goals, Migration Plan, Open Questions, Risks / Trade-offs (+3 more)
 
 ### Community 28 - "EditableSection"
 Cohesion: 0.12
@@ -443,8 +435,8 @@ Cohesion: 0.21
 Nodes (14): proxima deploy, proxima skills install, Proxima Agent Skills, add-page skill, add-section skill, EditableAttribute wrapper, add-smart-collection skill, new-storefront-app skill (+6 more)
 
 ### Community 30 - "Migrate Consumers to SDK Design"
-Cohesion: 0.06
-Nodes (33): Context, Decisions, El PoC pasa de `file:../../packages/*` a `file:../../../proxima-storefront-sdk/packages/*`, Goals / Non-Goals, Migration Plan, `normalizeCmsSections` del PoC, Risks / Trade-offs, template-catalog queda sin `packages/` (+25 more)
+Cohesion: 0.18
+Nodes (10): Capabilities, Impact, Modified Capabilities, New Capabilities, What Changes, Why, proxima-214store repo, proxima-website-template-catalog repo (+2 more)
 
 ### Community 31 - "exports"
 Cohesion: 0.12
@@ -487,8 +479,8 @@ Cohesion: 0.16
 Nodes (13): proxima.template.json, proxima-templateizer CLI, proxima.website.json, Capabilities, Impact, Modified Capabilities, New Capabilities, What Changes (+5 more)
 
 ### Community 41 - "GET /api/buyer/profile"
-Cohesion: 0.16
-Nodes (11): resetPassword(), verifyEmail(), processResetPassword(), processVerifyEmail(), CONFIG, WEBSITE, BUYER_AUTH_ERRORS, WishlistItem (+3 more)
+Cohesion: 0.20
+Nodes (9): Context, Decisions, El PoC pasa de `file:../../packages/*` a `file:../../../proxima-storefront-sdk/packages/*`, Goals / Non-Goals, Migration Plan, `normalizeCmsSections` del PoC, Risks / Trade-offs, template-catalog queda sin `packages/` (+1 more)
 
 ### Community 42 - "Breaking Change 409 Protection"
 Cohesion: 0.29
@@ -499,8 +491,8 @@ Cohesion: 0.29
 Nodes (6): Composition-First Architecture, fetchProximaComposition, fetchProximaProducts, fetchStorefrontProducts, searchStorefront, validateCoupon
 
 ### Community 44 - "handleCacheInvalidateWebhook"
-Cohesion: 0.30
-Nodes (13): addToCart(), cartContext(), fetchCart(), mergeGuestCart(), removeCartItem(), updateCartItem(), validateCoupon(), POST() (+5 more)
+Cohesion: 0.29
+Nodes (7): Decisions, pnpm workspaces como package manager, storefront-builder-sdk mantiene componentes Astro, storefront-cms consolida las dos versiones existentes, Turborepo como orquestador de tasks, Un tsconfig.base.json compartido en la raíz, Vitest como test runner unificado
 
 ### Community 45 - "tsconfig.json"
 Cohesion: 0.25
@@ -527,8 +519,8 @@ Cohesion: 0.29
 Nodes (6): compilerOptions, outDir, rootDir, types, extends, include
 
 ### Community 51 - "cms-inspect-chrome capability"
-Cohesion: 0.20
-Nodes (9): cms-inspect-chrome capability, buildEditableAttributeProps utility, CmsPreviewBridge postMessage bridge, data-cms-inspect-title attribute, EditableAttribute component, EditableItem component, EditableSection component, resolveEditorKind utility (+1 more)
+Cohesion: 0.17
+Nodes (11): cms-inspect-chrome capability, buildEditableAttributeProps utility, CmsPreviewBridge postMessage bridge, data-cms-inspect-title attribute, EditableAttribute component, EditableItem component, EditableSection component, preview.css unified inspect chrome (+3 more)
 
 ### Community 52 - "BuyerRegisterParams"
 Cohesion: 0.29
@@ -579,12 +571,12 @@ Cohesion: 0.33
 Nodes (5): compilerOptions, outDir, rootDir, extends, include
 
 ### Community 64 - "profile.ts"
-Cohesion: 0.29
-Nodes (5): updateBuyerProfile(), config, ctx, PATCH(), updateBuyerProfile
+Cohesion: 0.33
+Nodes (4): config, ctx, PATCH(), updateBuyerProfile
 
 ### Community 65 - "@proxima-io/cli Changelog"
-Cohesion: 0.14
-Nodes (13): 0.1.0, 0.2.0, 0.2.1, 0.2.2, Minor Changes, Minor Changes, Minor Changes, Patch Changes (+5 more)
+Cohesion: 0.22
+Nodes (9): 0.1.0, 0.2.0, 0.2.1, 0.2.2, Minor Changes, Minor Changes, Minor Changes, Patch Changes (+1 more)
 
 ### Community 66 - "OpenSpec CLI"
 Cohesion: 0.50
@@ -599,8 +591,8 @@ Cohesion: 0.40
 Nodes (4): ImportMeta, ImportMetaEnv, Locals, Window
 
 ### Community 69 - "ProximaAnalytics"
-Cohesion: 0.27
-Nodes (7): POST /api/cart/merge, GET /api/coupon/validate, getWebsite(), proximaConfig, In-memory websiteCache, ../lib/proxima, ../sections
+Cohesion: 0.40
+Nodes (4): @proxima-io/cli, proxima skills list, @proxima-io/templateizer, WebsiteDeployClient
 
 ### Community 70 - "storefront-core TypeScript config"
 Cohesion: 0.40
@@ -611,8 +603,8 @@ Cohesion: 0.05
 Nodes (37): address-book-sdk Specification, Purpose, Requirements, Scenario: Address not found throws, Requirement: AddressInput type is exported from storefront-core, Requirement: CheckoutRequest accepts optional address_id, Requirement: createCustomerAddress SDK function is exported, Requirement: CustomerAddress type is exported from storefront-core (+29 more)
 
 ### Community 73 - "config"
-Cohesion: 0.40
-Nodes (4): config, context, GET(), processGetCart()
+Cohesion: 0.50
+Nodes (3): config, context, GET()
 
 ### Community 74 - "remove.ts"
 Cohesion: 0.11
@@ -711,12 +703,12 @@ Cohesion: 0.06
 Nodes (30): "409 Breaking changes", Campos que NO necesitan `EditableAttribute`, Campos que NO van al schema, Campos que SÍ necesitan `EditableAttribute`, Checklist completo, Contexto — dónde vive cada pieza, Ejemplo: sección con array de items, "El Builder muestra un campo pero el componente no lo usa" (+22 more)
 
 ### Community 111 - "deleteCustomerAddress"
-Cohesion: 0.11
-Nodes (22): fetchBuyerProfile(), fetchRegistrationForm(), loginBuyer(), refreshBuyerToken(), resendVerification(), tenant(), env, POST() (+14 more)
+Cohesion: 0.13
+Nodes (31): fetchBuyerProfile(), fetchRegistrationForm(), forgotPassword(), loginBuyer(), refreshBuyerToken(), registerBuyer(), resendVerification(), resetPassword() (+23 more)
 
 ### Community 112 - "setDefaultAddress"
-Cohesion: 0.19
-Nodes (19): fetchBrandProducts(), fetchBrandsDirectory(), fetchCategoriesDirectory(), fetchCategoryNavTree(), fetchCategoryProducts(), fetchProductListing(), fetchStorefrontProducts(), searchStorefront() (+11 more)
+Cohesion: 0.14
+Nodes (21): mergeGuestCart(), validateCoupon(), fetchBrandProducts(), fetchBrandsDirectory(), fetchCategoriesDirectory(), fetchCategoryNavTree(), fetchCategoryProducts(), fetchProductListing() (+13 more)
 
 ### Community 116 - "publishConfig"
 Cohesion: 0.07
@@ -770,34 +762,6 @@ Nodes (9): ADDED Requirements, Requirement: Helper para referencias a placeholde
 Cohesion: 0.09
 Nodes (21): ADDED Requirements, Requirement: Artefactos de análisis, Requirement: CLI ejecutable como bin, Requirement: Comando deploy, Requirement: Comando publish, Requirement: Comando register, Requirement: Comando status, Requirement: Comando sync (+13 more)
 
-### Community 176 - "Community 176"
-Cohesion: 0.18
-Nodes (12): SearchBar autocomplete component, Template manifest vs website deploy manifest split, #proxima-config meta element, SECTION_MAP dynamic section rendering, Window __PROXIMA_BUSINESS_ID__ and __PROXIMA_CURRENCY__, Template capabilities: cart, search, wishlist, buyer_auth, Proxima Marketplace template manifest, Section type: header (+4 more)
-
-### Community 177 - "Community 177"
-Cohesion: 0.20
-Nodes (10): cloneCart(), createCartStore(), createFixtureBundle(), FixtureBundle, FixtureGuestOrderError, validateFixtureBundle(), CART, CATALOG (+2 more)
-
-### Community 178 - "Community 178"
-Cohesion: 0.28
-Nodes (8): ../components/CartDrawer.astro, badge, body, footer, loadCart(), openDrawer(), totalEl, updateBadge()
-
-### Community 179 - "Community 179"
-Cohesion: 0.28
-Nodes (7): Draft attribute DOM patch state, if(), WYSIWYG inline edit pipeline, CMS preview postMessage protocol, setNodeText(), data-cms-attribute inspect metadata contract, inspectTitle
-
-### Community 180 - "Community 180"
-Cohesion: 0.29
-Nodes (7): FixtureProductListingParams, StorefrontFacetOption, StorefrontProductListingResponse, ProductFacet, ProductListingFilters, ProductListingResult, ProductListingSortOption
-
-### Community 181 - "Community 181"
-Cohesion: 0.33
-Nodes (6): GET /api/buyer/profile, POST /api/buyer/refresh, proximaConfig API credentials, onRequest, Silent access token refresh on 401, Astro.locals.buyer BuyerProfile
-
-### Community 182 - "Community 182"
-Cohesion: 0.33
-Nodes (6): Cadena de resolución del locale (composición pública), Forma del bloque `attributes_meta`, Fundamentos compartidos, Recursión en `object` / `array`, Validador del publish, Wrappers de persistencia en `Section.values`
-
 ### Community 183 - "Website Deploy API Spec"
 Cohesion: 0.20
 Nodes (9): Authentication, Endpoint, Idempotency, Request Body, Response — 200 OK, Response — 404 Not Found, Response — 409 Conflict (breaking change), Response — 422 Unprocessable (+1 more)
@@ -840,7 +804,7 @@ Nodes (22): Paso 5 — Registrar en SECTION_MAP, Añadir atributo obligatorio (g
 
 ### Community 194 - "Community 194"
 Cohesion: 0.08
-Nodes (30): deleteCustomerAddress(), setDefaultAddress(), forgotPassword(), logoutBuyer(), registerBuyer(), POST(), env, POST() (+22 more)
+Nodes (33): deleteCustomerAddress(), setDefaultAddress(), logoutBuyer(), env, POST(), POST(), env, POST() (+25 more)
 
 ### Community 195 - "Community 195"
 Cohesion: 0.09
@@ -854,21 +818,17 @@ Nodes (3): fetchProximaComposition catch-all route, [...path].astro catch-all ro
 Cohesion: 0.10
 Nodes (20): Archivos requeridos en cada storefront, Arquitectura completa, Audit Checklist, Brand pages (`/marca/{slug}`), Category pages (`/categoria/{slug}`), Checks por tipo de página, Configurar SEO en el admin (Website record), Flujo SEO por tipo de página (+12 more)
 
-### Community 203 - "Community 203"
-Cohesion: 0.40
-Nodes (5): ¿A quién va dirigida?, El proyecto starter, Guía para developers — Proxima Storefront, SDK — Paquetes disponibles, Índice
-
 ### Community 204 - "Community 204"
 Cohesion: 0.11
 Nodes (18): 07 — CMS attribute schema (manifiesto → Builder), Alternativa — `option_labels`, API en `storefront-core`, Arrays y overrides (`product_overrides`, etc.), Atributo de primer nivel, Checklist para nuevos section types, `datetime` — Atributos de campaña / countdown, Flujo (+10 more)
 
 ### Community 205 - "Community 205"
-Cohesion: 0.67
-Nodes (3): FixtureBundleInput, Cart, CategoryNavTreeResponse
+Cohesion: 0.24
+Nodes (9): createCustomerAddress(), fetchCustomerAddresses(), searchUbigeo(), updateCustomerAddress(), FixtureBundleInput, AddressInput, CustomerAddress, UbigeoResult (+1 more)
 
 ### Community 206 - "Community 206"
-Cohesion: 0.11
-Nodes (22): createCustomerAddress(), fetchCustomerAddresses(), searchUbigeo(), updateCustomerAddress(), authHeaders(), fetchOrder(), fetchOrders(), ResolveStorefrontDataSourceOptions (+14 more)
+Cohesion: 0.17
+Nodes (16): addToCart(), cartContext(), fetchCart(), removeCartItem(), updateCartItem(), cartHeaders(), CartTotals, CheckoutRequest (+8 more)
 
 ### Community 207 - "Community 207"
 Cohesion: 0.12
@@ -883,8 +843,8 @@ Cohesion: 0.12
 Nodes (15): a) Crear la ruta Astro, b) Declarar la página en `proxima.website.json`, c) Si es `content_page` con section types nuevos, d) Deploy, Decisión 1 — ¿Qué tipo de página? (resolver_kind), Decisión 2 — `prerender` true o false (LA decisión crítica), e) Verificar, Ejemplo 1 — content_page estática `/promociones` (+7 more)
 
 ### Community 210 - "Community 210"
-Cohesion: 0.12
-Nodes (16): Apéndice: checklist de debugging, Apéndice: tabla de referencia rápida, `array`, `boolean`, Builder-only: `product-picker`, Builder-only: `select`, `datetime`, `image` (+8 more)
+Cohesion: 0.09
+Nodes (22): Apéndice: checklist de debugging, Apéndice: tabla de referencia rápida, `array`, `boolean`, Builder-only: `product-picker`, Builder-only: `select`, Cadena de resolución del locale (composición pública), `datetime` (+14 more)
 
 ### Community 211 - "Community 211"
 Cohesion: 0.12
@@ -944,7 +904,7 @@ Nodes (11): AD-001: Todo vive en `storefront-core/src/index.ts`, AD-002: No hay 
 
 ### Community 225 - "Community 225"
 Cohesion: 0.40
-Nodes (4): compilerOptions, baseUrl, paths, extends
+Nodes (5): ProximaAnalytics, QueuedEvent, StorefrontAnalyticsConfig, StorefrontEventPayload, StorefrontEventType
 
 ### Community 226 - "Community 226"
 Cohesion: 0.17
@@ -1066,6 +1026,10 @@ Nodes (5): 1. SDK — metadata y utilidades, 2. SDK — componentes Astro, 3. SD
 Cohesion: 0.33
 Nodes (5): 1. Preparar el SDK, 2. Migrar proxima-managed-storefront-poc, 3. Migrar proxima-website-template-catalog, 4. Migrar proxima-214store, 5. Verificación final
 
+### Community 263 - "Community 263"
+Cohesion: 0.50
+Nodes (3): config, context, POST()
+
 ### Community 265 - "Community 265"
 Cohesion: 0.50
 Nodes (3): Bundled skills, Proxima agent skills, Scope and limitations
@@ -1075,24 +1039,24 @@ Cohesion: 0.50
 Nodes (3): 0.2.0, Minor Changes, @proxima-io/template-schema
 
 ## Knowledge Gaps
-- **1629 isolated node(s):** `ARTIFACT_COMMANDS`, `COMMAND_NAMES`, `handlers`, `ServiceCommandContext`, `Spinner` (+1624 more)
+- **1631 isolated node(s):** `Cómo uso esta skill`, `Clasificador de síntomas`, `§1 — `[object Object]` en el render`, `§2 — Página de categoría/marca vacía (200)`, `§3 — Cart 422 NOT_STOREFRONT_SELLABLE con stock > 0` (+1626 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **68 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **67 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `EditableSection builder preview wrapper` connect `Starter API Routes` to `Community 179`, `EditableSection`?**
-  _High betweenness centrality (0.074) - this node is a cross-community bridge._
-- **Why does `getWebsite()` connect `ProximaAnalytics` to `Buyer Auth & Cart`, `Community 194`, `handleCacheInvalidateWebhook`?**
+- **Why does `EditableSection builder preview wrapper` connect `Starter API Routes` to `EditableSection`?**
   _High betweenness centrality (0.072) - this node is a cross-community bridge._
-- **Why does `fetchProximaWebsite()` connect `Community 194` to `ProximaAnalytics`, `config`, `Buyer API Handlers`, `deleteCustomerAddress`, `Community 219`?**
-  _High betweenness centrality (0.067) - this node is a cross-community bridge._
-- **What connects `ARTIFACT_COMMANDS`, `COMMAND_NAMES`, `handlers` to the rest of the system?**
-  _1650 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `Builder Inspect Chrome` be split into smaller, more focused modules?**
-  _Cohesion score 0.05698778833107191 - nodes in this community are weakly interconnected._
-- **Should `Proxima CLI Workspace` be split into smaller, more focused modules?**
-  _Cohesion score 0.06758832565284179 - nodes in this community are weakly interconnected._
-- **Should `Agent Skills & Docs` be split into smaller, more focused modules?**
-  _Cohesion score 0.046511627906976744 - nodes in this community are weakly interconnected._
+- **Why does `getWebsite()` connect `Starter API Routes` to `Buyer Auth & Cart`, `Community 194`?**
+  _High betweenness centrality (0.065) - this node is a cross-community bridge._
+- **Why does `EditableAttribute wrapper` connect `proxima deploy` to `EditableSection`?**
+  _High betweenness centrality (0.064) - this node is a cross-community bridge._
+- **Are the 2 inferred relationships involving `TemplateRegistryClient` (e.g. with `registerTemplateCommand` and `WebsiteDeployClient`) actually correct?**
+  _`TemplateRegistryClient` has 2 INFERRED edges - model-reasoned connections that need verification._
+- **What connects `Cómo uso esta skill`, `Clasificador de síntomas`, `§1 — `[object Object]` en el render` to the rest of the system?**
+  _1652 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `Templateizer CLI` be split into smaller, more focused modules?**
+  _Cohesion score 0.07785547785547786 - nodes in this community are weakly interconnected._
+- **Should `Starter API Routes` be split into smaller, more focused modules?**
+  _Cohesion score 0.05179982440737489 - nodes in this community are weakly interconnected._
