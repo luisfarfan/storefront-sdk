@@ -2,7 +2,6 @@ import { StorefrontEndpoints, createStorefrontClient } from '../api/index.js';
 import type {
   ProximaApiConfig,
   ProximaCompositionResponse,
-  ProximaProductListResponse,
   ProximaRenderResponse,
   ProximaWebsiteResponse,
 } from '../types/cms.js';
@@ -186,21 +185,3 @@ export async function fetchProximaRender(
   });
 }
 
-/**
- * @deprecated Use `fetchStorefrontProducts` instead. This function calls the raw
- * catalog endpoint (`/api/v1/products`) which is not enriched for storefront use
- * (no price_formatted, no badge, no default_variant_id). It will be removed in a future version.
- */
-export async function fetchProximaProducts(
-  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
-  website: ProximaWebsiteResponse,
-): Promise<ProximaProductListResponse> {
-  const client = createStorefrontClient(config);
-  return client.get<ProximaProductListResponse>(StorefrontEndpoints.catalog.legacyProducts(), {
-    businessId: website.business_id,
-    locale: website.locale ?? "es",
-    currency: website.currency ?? "PEN",
-    query: { size: 12 },
-    failPrefix: 'Products failed',
-  });
-}
