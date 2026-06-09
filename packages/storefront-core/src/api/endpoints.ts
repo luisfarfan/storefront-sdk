@@ -9,6 +9,7 @@ export const StorefrontEndpoints = {
     resolveWebsite: () => '/api/v1/storefront/cms/websites/resolve',
     composition: (websiteId: string) =>
       `/api/v1/storefront/cms/websites/${websiteId}/pages/composition`,
+    render: () => '/api/v1/storefront/render',
   },
 
   business: {
@@ -36,7 +37,6 @@ export const StorefrontEndpoints = {
   },
 
   commerce: {
-    paymentInstructions: () => '/api/v1/storefront/payment-instructions',
     validateCoupon: () => '/api/v1/storefront/coupons/validate',
   },
 

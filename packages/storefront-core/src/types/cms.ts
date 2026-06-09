@@ -80,3 +80,70 @@ export interface ProximaProductListResponse {
   page: number;
   size: number;
 }
+
+// ---------------------------------------------------------------------------
+// Render endpoint — aggregated SSR response (shell + page + bootstrap)
+// ---------------------------------------------------------------------------
+
+export interface ProximaNavNode {
+  id: number;
+  slug: string;
+  name: string;
+  href: string;
+  image_url?: string | null;
+  product_count: number;
+  children: ProximaNavNode[];
+}
+
+export interface ProximaRenderShell {
+  theme: Record<string, any>;
+  navigation: {
+    nodes: ProximaNavNode[];
+    total: number;
+  };
+  payment_methods: Array<Record<string, any>>;
+  locale: string;
+  currency: string;
+}
+
+export interface ProximaRenderPage {
+  sections: Array<{
+    id: number;
+    name: string;
+    type: string;
+    order: number;
+    attributes: Record<string, any>;
+    attributes_meta?: Record<string, any>;
+  }>;
+  seo?: Record<string, any> | null;
+  resolver_kind?: string | null;
+  resolved_data?: Record<string, any> | null;
+  attributes_meta?: Record<string, any> | null;
+  requires_auth: boolean;
+}
+
+export interface ProximaRenderWebsite {
+  id: string;
+  name: string;
+  domain?: string | null;
+  locale: string;
+  currency: string;
+}
+
+export interface ProximaRenderBootstrap {
+  categories: Array<{ id: number; name: string; slug: string; image_url?: string | null }>;
+  brands: Array<{ id: number; name: string; slug: string; logo_url?: string | null }>;
+  config?: Record<string, any> | null;
+  presence?: Record<string, any> | null;
+}
+
+/**
+ * Aggregated SSR response from `GET /api/v1/storefront/render`.
+ * Contains everything needed to render any page in a single round-trip.
+ */
+export interface ProximaRenderResponse {
+  shell: ProximaRenderShell;
+  page: ProximaRenderPage;
+  bootstrap: ProximaRenderBootstrap;
+  website: ProximaRenderWebsite;
+}

@@ -3,12 +3,12 @@ import type {
   ProximaApiConfig,
   ProximaCompositionResponse,
   ProximaProductListResponse,
+  ProximaRenderResponse,
   ProximaWebsiteResponse,
 } from '../types/cms.js';
 import type {
   StorefrontBusinessProfile,
   StorefrontCampaign,
-  StorefrontPaymentMethod,
 } from '../types/business.js';
 
 export async function fetchBusinessProfile(
@@ -57,31 +57,6 @@ export async function fetchCampaignBySlug(
     notFound: 'null',
     failPrefix: 'Campaign fetch failed',
   });
-}
-
-/**
- * Fetch the merchant's enabled payment methods. Tenant-wide — call once per
- * request and cache on `Astro.locals` so the footer reads from memory.
- *
- * Backed by `GET /storefront/payment-instructions` (public storefront
- * endpoint — same surface used by the checkout flow).
- *
- * @example
- * const methods = await fetchPaymentMethods(
- *   { baseUrl: env.apiUrl, serviceKey: env.serviceKey },
- *   website.business_id,
- * );
- */
-export async function fetchPaymentMethods(
-  config: Pick<ProximaApiConfig, "baseUrl" | "serviceKey">,
-  businessId: string,
-): Promise<StorefrontPaymentMethod[]> {
-  const client = createStorefrontClient(config);
-  const data = await client.get<{ items?: StorefrontPaymentMethod[] }>(
-    StorefrontEndpoints.commerce.paymentInstructions(),
-    { businessId, failPrefix: 'Payment methods fetch failed' },
-  );
-  return data.items ?? [];
 }
 
 /** List all websites for a service-key authenticated caller. Useful for build-time scripts. */
@@ -175,6 +150,40 @@ export async function fetchProximaComposition(
       failPrefix: 'Composition failed',
     },
   );
+}
+
+/**
+ * Fetch everything needed to SSR any page in a single round-trip.
+ *
+ * Returns `shell` (theme, nav tree, payment methods), `page` (sections + resolved data + SEO),
+ * `bootstrap` (categories, brands, store config) and `website` metadata.
+ * The response is cached at the CDN edge with `stale-while-revalidate`, so warm requests
+ * are served in ~5ms without hitting the API origin.
+ *
+ * Use this instead of calling `fetchProximaWebsite` + `fetchProximaComposition` +
+ * `fetchCategoryNavTree` + `fetchBusinessProfile` separately.
+ *
+ * @example
+ * // src/pages/[...path].astro
+ * const render = await fetchProximaRender(
+ *   { baseUrl: env.apiUrl, domain: Astro.url.hostname, path: Astro.url.pathname, serviceKey: env.serviceKey }
+ * );
+ * if (render.page.requires_auth) return Astro.redirect('/login');
+ */
+export async function fetchProximaRender(
+  config: Pick<ProximaApiConfig, 'baseUrl' | 'domain' | 'path' | 'serviceKey'> & {
+    /** Override domain for dev/testing (maps to ?domain= query param). */
+    host?: string;
+  },
+): Promise<ProximaRenderResponse> {
+  const client = createStorefrontClient(config);
+  return client.get<ProximaRenderResponse>(StorefrontEndpoints.cms.render(), {
+    query: {
+      path: config.path,
+      domain: config.host ?? config.domain,
+    },
+    failPrefix: 'Render fetch failed',
+  });
 }
 
 /**
