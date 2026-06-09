@@ -104,6 +104,15 @@ export interface ProximaRenderShell {
   payment_methods: Array<Record<string, any>>;
   locale: string;
   currency: string;
+  /** CMS-managed layout sections keyed by type (header, footer, mega_menu). */
+  shell_sections?: Record<string, {
+    section_id?: number;
+    page_id?: number;
+    section_type?: string;
+    section_name?: string;
+    attributes?: Record<string, any>;
+    attributes_meta?: Record<string, any>;
+  }> | null;
 }
 
 export interface ProximaRenderPage {
@@ -120,14 +129,28 @@ export interface ProximaRenderPage {
   resolved_data?: Record<string, any> | null;
   attributes_meta?: Record<string, any> | null;
   requires_auth: boolean;
+  /** True when no page matched the path — treat as 404. */
+  not_found: boolean;
 }
 
 export interface ProximaRenderWebsite {
   id: string;
+  business_id: string;
   name: string;
   domain?: string | null;
   locale: string;
   currency: string;
+  delivery_mode?: string | null;
+  website_kind?: string | null;
+  template_key?: string | null;
+  code_profile?: string | null;
+  og_image_url?: string | null;
+  logo_url?: string | null;
+  favicon_url?: string | null;
+  twitter_handle?: string | null;
+  capabilities?: Record<string, any>;
+  animation_config?: Record<string, any>;
+  pages?: Array<{ name: string; path: string; resolver_kind: string; is_active: boolean }>;
 }
 
 export interface ProximaRenderBootstrap {
