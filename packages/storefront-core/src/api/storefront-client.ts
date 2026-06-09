@@ -30,6 +30,10 @@ export type StorefrontRequestOptions = StorefrontRequestContext & {
   ignoreErrors?: boolean;
   /** Return fallback on any non-OK response (e.g. ubigeo search) */
   fallback?: unknown;
+  /** Abort after this many ms. Defaults to 10 000. Pass 0 to disable. */
+  timeoutMs?: number;
+  /** Custom abort signal — takes precedence over timeoutMs. */
+  signal?: AbortSignal;
 };
 
 type JsonRequestOptions = StorefrontRequestOptions & {
@@ -131,8 +135,19 @@ export class StorefrontClient {
     opts: JsonRequestOptions = {},
   ): Promise<T> {
     const url = this.url(path, opts.query);
+
+    // Default 10 s timeout so a hung API never stalls SSR indefinitely.
+    // Callers can override with opts.signal or set opts.timeoutMs = 0 to disable.
+    const timeoutMs = opts.timeoutMs ?? 10_000;
+    const signal =
+      opts.signal ??
+      (timeoutMs > 0 && typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal
+        ? AbortSignal.timeout(timeoutMs)
+        : undefined);
+
     const init: RequestInit = {
       method,
+      ...(signal ? { signal } : {}),
       headers: buildHeaders(this.serviceKey, {
         ...opts,
         withJsonBody: opts.body !== undefined,
