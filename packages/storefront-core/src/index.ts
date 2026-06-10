@@ -24,6 +24,7 @@ export * from './seo/robots.js';
 export * from './seo/indexnow.js';
 
 export * from './cms/website.js';
+export * from './cms/payment-methods.js';
 
 export * from './buyer/auth.js';
 

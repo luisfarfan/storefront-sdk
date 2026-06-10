@@ -227,6 +227,17 @@ export async function run(argv = process.argv.slice(2)): Promise<number> {
     return runSkills(subcommand, skillRest);
   }
 
+  if (command === "export") {
+    const [subcommand, ...exportRest] = rest;
+    if (subcommand === "fixtures") {
+      const { target, flags } = extractTarget(exportRest);
+      return delegateTemplateizer("export-fixtures", target, flags);
+    }
+    console.error(`Unknown export subcommand: ${subcommand ?? "(none)"}`);
+    console.error("Usage: proxima export fixtures [slug] [flags]");
+    return 1;
+  }
+
   const alias = ALIASES[command];
   if (alias) {
     const [templateizerCommand, ...aliasFlags] = alias;

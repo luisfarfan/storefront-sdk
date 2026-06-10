@@ -15,6 +15,7 @@ Usage:
 
 Shortcuts
   deploy              → website-deploy
+  export fixtures     → export-fixtures (live CMS → src/fixtures/)
   template:create     → template-create
   template:publish    → template-create --publish-manifest
 
