@@ -1,5 +1,11 @@
 import { StorefrontEndpoints } from '../api/endpoints.js';
+import { isAnalyticsConsentGranted, onCookieConsentChanged } from '../cookie-consent/consent.js';
 import type { StorefrontAnalyticsConfig, StorefrontEventPayload, StorefrontEventType } from '../types/analytics.js';
+
+export interface StorefrontAnalyticsInitOptions {
+  /** When true, `init()` waits until analytics consent is granted. */
+  requireAnalyticsConsent?: boolean;
+}
 
 interface QueuedEvent {
   event_type: StorefrontEventType;
@@ -13,14 +19,37 @@ interface QueuedEvent {
 
 class ProximaAnalytics {
   private config: StorefrontAnalyticsConfig | null = null;
+  private pendingConfig: StorefrontAnalyticsConfig | null = null;
   private queue: QueuedEvent[] = [];
   private preInitQueue: Array<[StorefrontEventType, StorefrontEventPayload]> = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
+  private consentRequired = false;
 
-  init(config: StorefrontAnalyticsConfig): void {
+  init(config: StorefrontAnalyticsConfig, options?: StorefrontAnalyticsInitOptions): void {
+    if (typeof window === 'undefined') return;
+    if (options?.requireAnalyticsConsent) {
+      this.consentRequired = true;
+      this.pendingConfig = config;
+      if (!isAnalyticsConsentGranted()) return;
+    }
+    this.start(config);
+  }
+
+  /** Resume init after the shopper grants analytics consent. */
+  resumeFromConsent(): void {
+    if (typeof window === 'undefined') return;
+    if (this.initialized) return;
+    if (!this.consentRequired || !isAnalyticsConsentGranted()) return;
+    const config = this.pendingConfig ?? this.config;
+    if (!config) return;
+    this.start(config);
+  }
+
+  private start(config: StorefrontAnalyticsConfig): void {
     if (typeof window === 'undefined') return;
     this.config = config;
+    this.pendingConfig = null;
     if (this.initialized) return;
     this.initialized = true;
 
@@ -82,6 +111,8 @@ class ProximaAnalytics {
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
     this.initialized = false;
+    this.consentRequired = false;
+    this.pendingConfig = null;
     this.config = null;
     this.queue = [];
     this.preInitQueue = [];
@@ -90,3 +121,9 @@ class ProximaAnalytics {
 
 /** Singleton analytics client. Call `analytics.init()` once from SiteLayout. */
 export const analytics = new ProximaAnalytics();
+
+if (typeof window !== 'undefined') {
+  onCookieConsentChanged((state) => {
+    if (state.analytics) analytics.resumeFromConsent();
+  });
+}

@@ -14,6 +14,7 @@ export * from './types/listing.js';
 export * from './types/guest-order.js';
 export * from './types/campaign.js';
 export * from './types/analytics.js';
+export * from './types/cookie-consent.js';
 
 export * from './api/index.js';
 
@@ -44,6 +45,9 @@ export * from './server/process.js';
 export * from './campaign/countdown.js';
 
 export { analytics } from './analytics/analytics.js';
+export type { StorefrontAnalyticsInitOptions } from './analytics/analytics.js';
+
+export * from './cookie-consent/consent.js';
 
 export * from './cache/cache.js';
 
