@@ -153,11 +153,39 @@ export interface ProximaRenderWebsite {
   pages?: Array<{ name: string; path: string; resolver_kind: string; is_active: boolean }>;
 }
 
+export interface StorefrontRegFormField {
+  name: string;
+  label?: string | null;
+  required: boolean;
+  order: number;
+  widget?: string | null;
+  widget_config: Record<string, any>;
+  options?: string[] | null;
+}
+
+export interface StorefrontRegFormStep {
+  id: string;
+  label: string;
+  order: number;
+  skippable: boolean;
+  fields: StorefrontRegFormField[];
+}
+
+export interface StorefrontRegistrationForm {
+  mode: "single_step" | "multi_step";
+  steps: StorefrontRegFormStep[];
+  post_registration: {
+    redirect_to: string;
+    show_completion_prompt: boolean;
+  };
+}
+
 export interface ProximaRenderBootstrap {
   categories: Array<{ id: number; name: string; slug: string; image_url?: string | null }>;
   brands: Array<{ id: number; name: string; slug: string; logo_url?: string | null }>;
   config?: Record<string, any> | null;
   presence?: Record<string, any> | null;
+  registration_form?: StorefrontRegistrationForm | null;
 }
 
 /**
