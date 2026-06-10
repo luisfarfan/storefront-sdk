@@ -14,6 +14,7 @@ export * from './types/listing.js';
 export * from './types/guest-order.js';
 export * from './types/campaign.js';
 export * from './types/analytics.js';
+export * from './types/cookie-consent.js';
 
 export * from './api/index.js';
 
@@ -24,6 +25,7 @@ export * from './seo/robots.js';
 export * from './seo/indexnow.js';
 
 export * from './cms/website.js';
+export * from './cms/payment-methods.js';
 
 export * from './buyer/auth.js';
 
@@ -43,6 +45,20 @@ export * from './server/process.js';
 export * from './campaign/countdown.js';
 
 export { analytics } from './analytics/analytics.js';
+export type { StorefrontAnalyticsInitOptions } from './analytics/analytics.js';
+export { resolveAnalyticsSessionId, ANALYTICS_SESSION_STORAGE_KEY } from './analytics/session.js';
+export {
+  captureSessionAttribution,
+  getSessionAttribution,
+  clearSessionAttribution,
+  inferAttributionFromReferrer,
+  ATTRIBUTION_STORAGE_KEY,
+} from './analytics/attribution.js';
+export type { SessionAttribution } from './analytics/attribution.js';
+export { createStorefrontAnalyticsTrackers } from './analytics/trackers.js';
+export type { StorefrontAnalyticsTrackers } from './analytics/trackers.js';
+
+export * from './cookie-consent/consent.js';
 
 export * from './cache/cache.js';
 

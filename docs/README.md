@@ -24,6 +24,7 @@ Se asume conocimiento de Astro (componentes, SSR, API routes, middleware) pero n
 | 8 | [Template authoring](./08-template-authoring.md) | De storefront a template reutilizable en el marketplace |
 | 9 | [Deploy](./09-deploy.md) | `proxima deploy` — subir manifiesto al Builder |
 | 10 | [Agent skills](./10-agent-skills.md) | Instalar skills de agente (`proxima skills install`) |
+| 13 | [Analytics](./13-analytics.md) | Cliente analytics: eventos, consent, sesión, UTMs, transport |
 | — | [CMS attribute schema](./07-cms-attribute-schema.md) | Schema Builder: help_text, options, overrides, arrays |
 
 ---

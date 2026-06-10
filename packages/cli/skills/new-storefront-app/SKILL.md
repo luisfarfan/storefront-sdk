@@ -15,7 +15,7 @@ Scaffold a new independent storefront website app in the `apps/` directory of th
 5. Add a reverse-proxy entry to `Caddyfile`
 6. Run `npm install` to link workspace dependencies
 
-Analytics tracking is **included automatically** — `SiteLayout.astro` (copied from 214store) already calls `analytics.init()` on every page load and fires `page_view` events. No extra steps required.
+Analytics is wired in the golden template via **SSR config + cookie consent + beacons** (SDK `docs/13-analytics.md`; storefront reference `apps/tech-store/docs/analytics.md`). Live merchant sites only.
 
 The following commerce features are included out of the box (copied from 214store):
 
@@ -174,35 +174,22 @@ Next steps:
   8. proxima caddy check         — verify Caddy routes
   9. (Optional) npm run dev      — start all apps together
 
-Analytics: page_view, product_view, and add_to_cart track automatically.
-  For order_completed: call analytics.track('order_completed', { order_id, order_total })
-  in CheckoutView after the order is confirmed.
+Analytics (live only): SSR config JSON + cookie consent + beacons. See SDK `docs/13-analytics.md`.
+  Endpoint: POST /api/v1/storefront/events (X-Business-ID + X-Session-ID).
 ```
 
 ## Analytics tracking
 
-Analytics is wired automatically via `SiteLayout.astro`. The following events fire out of the box:
+SDK contract: **`docs/13-analytics.md`**. Storefront wiring reference: **`proxima-storefronts/apps/tech-store/docs/analytics.md`**.
 
-| Event | Where | Trigger |
-|-------|-------|---------|
-| `page_view` | SiteLayout | Every page load + `astro:page-load` (view transitions) |
-| `product_view` | ProductDetail | On render |
-| `add_to_cart` | ProductGrid | On form submit |
+| Layer | What |
+|-------|------|
+| SSR config | `#pxa-analytics-config` — pass `sessionId` from cart cookie |
+| Consent | `analytics.init(config, { requireAnalyticsConsent: true })` |
+| Beacons | SSR `data-pxa-beacon` for page-level events |
+| Store | Cart mutations only — no scattered `track()` in buttons |
 
-To track additional events in custom components, import the singleton:
-
-```typescript
-// Inside any <script> tag (client-side only)
-import { analytics } from '@proxima-io/storefront-core';
-
-analytics.track('add_to_cart', { product_slug, variant_id, price });
-analytics.track('order_completed', { order_id, order_total });
-analytics.track('search', { query, results_count });
-```
-
-Events queued before `analytics.init()` are replayed automatically — safe to call `track()` in any component regardless of script execution order.
-
-Endpoint: `POST {PROXIMA_API_URL}/api/v1/store/events` with `X-Business-ID` header (handled internally by the SDK).
+Transport: `POST /api/v1/storefront/events`. UTMs auto-merge into `payload.attribution`.
 
 ## Guardrails
 

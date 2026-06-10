@@ -589,29 +589,32 @@ BUYER_COOKIE_OPTIONS      // { path: '/', httpOnly: true, sameSite: 'lax', maxAg
 
 ## Analytics
 
-Cliente client-side con queue automático y flush por batch.
+Cliente singleton con batch, consent GDPR, sesión (`X-Session-ID`) y atribución first-touch (UTMs + click IDs).
+
+**Documentación completa:** [`docs/13-analytics.md`](../../docs/13-analytics.md)
 
 ```ts
 import { analytics } from '@proxima-io/storefront-core';
 
-// En SiteLayout.astro <script> — llamar una sola vez:
-analytics.init({
-  apiUrl: 'https://api.proxima.io',
-  websiteId: 'uuid-website',
-  businessId: 'uuid-negocio',
-  locale: 'es',
-  flushInterval: 3000, // ms (default: 3000)
-  debug: false,
-});
+analytics.init(
+  {
+    apiUrl: 'https://api.proxima.io',
+    websiteId: 'uuid-website',
+    businessId: 'uuid-negocio',
+    locale: 'es',
+    sessionId: 'uuid-cart-session-from-ssr',
+  },
+  { requireAnalyticsConsent: true },
+);
 
-// En cualquier componente client-side:
-analytics.track('product_view', { product_slug: 'titan-mx-pro' });
+analytics.track('product_view', { product_slug: 'titan-mx-pro', price: 199.9 });
 analytics.track('add_to_cart', { product_slug, variant_id: 42, price: 199.90 });
 analytics.track('order_completed', { order_id: 'ord_123', order_total: 399.80 });
-analytics.track('search', { query: 'zapatillas', results_count: 24 });
 ```
 
-- `page_view` se dispara automáticamente al iniciar y en cada `astro:page-load`.
-- Los eventos se encolan y se envían en batch a `POST /api/v1/store/events`.
-- Al cerrar la pestaña (`visibilitychange: hidden`) se usa `navigator.sendBeacon`.
-- Es seguro llamar `analytics.track()` antes de `analytics.init()` — los eventos se reproducen al inicializar.
+- Endpoint: **`POST /api/v1/storefront/events`** con headers `X-Business-ID` + `X-Session-ID`.
+- `page_view` automático en init y `astro:page-load`.
+- Flush periódico + `fetch(..., { keepalive: true })` al ocultar la pestaña.
+- `captureSessionAttribution()` / `getSessionAttribution()` — ver doc § Marketing attribution.
+- Helpers de consent: `acceptAllCookieConsent()`, `isAnalyticsConsentGranted()`, etc.
+- Catálogo completo de eventos (`checkout_started`, `filter_applied`, `promotion_view`, …) en la doc.

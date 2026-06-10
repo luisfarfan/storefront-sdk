@@ -19,6 +19,14 @@ ${b("SETUP")}
                     and adds it to .gitignore. Use instead of managing .env manually.
 
 ${b("WEBSITE DEPLOY")}
+  ${c("export-fixtures")}   Export live CMS fixtures from API → src/fixtures/ + proxima.website.json.
+    ${d("Options:")}
+      ${y("--scope")} ${d("<cms|catalog|all>")}     Export scope (default: cms).
+      ${y("--website-domain")} ${d("<domain>")}     Live website domain (default: PROXIMA_WEBSITE_DOMAIN).
+      ${y("--fixture-domain")} ${d("<domain>")}     Domain written into website.json (default: API).
+      ${y("--dry-run")}                            Print planned file changes only.
+      ${y("--yes")}, ${y("-y")}                  Skip confirmation prompt.
+
   ${c("website-deploy")}    Deploy section types + page scaffolding to a specific website.
 
     ${d("Options:")}

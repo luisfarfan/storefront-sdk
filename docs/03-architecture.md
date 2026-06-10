@@ -14,7 +14,7 @@ apps/{slug}/                    # o proyecto standalone
 ├── astro.config.mjs            # SSR + node adapter
 └── src/
     ├── layouts/
-    │   └── SiteLayout.astro    # HTML base, shell (header/mega_menu/footer), analytics
+    │   └── SiteLayout.astro    # HTML base, shell (header/mega_menu/footer), analytics boot
     ├── pages/
     │   ├── [...path].astro     # Catch-all → resolveRequest → views / SectionRenderer
     │   └── api/buyer/          # Thin routes → @proxima-io/storefront-core process*
@@ -190,4 +190,5 @@ Ver [09-deploy.md](./09-deploy.md) y [10-agent-skills.md](./10-agent-skills.md).
 
 1. [Sections y attributes](./04-sections-and-attributes.md)
 2. [Builder integration](./06-builder-integration.md)
-3. [Deploy manifiesto](./09-deploy.md)
+3. [Analytics](./13-analytics.md)
+4. [Deploy manifiesto](./09-deploy.md)

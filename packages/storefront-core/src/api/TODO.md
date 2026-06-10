@@ -2,8 +2,8 @@
 
 Items to confirm against `proxima-api` before closing the storefront namespace migration.
 
-- [ ] **`payment-instructions`** — SDK uses `GET /api/v1/storefront/payment-instructions`. Confirm this matches `storefront_payment_instructions_router` (not e.g. `/storefront/commerce/payment-instructions`).
-- [ ] **`POST /api/v1/store/events`** (analytics) — Still under `/store/*`? Not listed in the 30 storefront / 26 store endpoints map.
+- [x] **`payment-instructions`** — removed from SDK; payment methods ship in website resolve shell footer (`payment_methods` attribute).
+- [x] **Analytics ingest** — `POST /api/v1/storefront/events` (see `docs/13-analytics.md`; legacy `/api/v1/store/events` removed).
 - [ ] **`GET /api/v1/catalog/locations/ubigeos`** (`searchUbigeo`) — Legacy catalog path. Is there a storefront equivalent or does this stay?
 - [ ] **Cart item path `{id}`** — SDK passes `variantId` in `/storefront/cart/items/{id}`. Confirm backend expects variant id vs cart line item id.
 - [ ] **`GET /api/v1/products`** (`fetchProximaProducts`, deprecated) — Remove when no consumers remain; use `/storefront/products`.

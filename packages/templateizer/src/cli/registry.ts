@@ -12,6 +12,7 @@ import {
 } from '../commands/registry.js';
 import { templateCreateCommand, templatePublishCommand } from '../commands/template-create.js';
 import { templateDeployCommand } from '../commands/template-deploy.js';
+import { exportFixturesCommand } from '../commands/export-fixtures.js';
 import { websiteDeployCommand } from '../commands/website-deploy.js';
 
 export const ARTIFACT_COMMANDS = new Set([
@@ -34,6 +35,7 @@ export const COMMAND_NAMES = new Set([
   'sync',
   'status',
   'website-deploy',
+  'export-fixtures',
   'template-deploy',
   'template-create',
   'template-publish',
@@ -49,6 +51,7 @@ const handlers: Record<string, CommandHandler> = {
   sync: syncTemplateCommand,
   status: statusTemplateCommand,
   'website-deploy': websiteDeployCommand,
+  'export-fixtures': exportFixturesCommand,
   'template-deploy': templateDeployCommand,
   'template-create': templateCreateCommand,
   'template-publish': templatePublishCommand,
