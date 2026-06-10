@@ -401,7 +401,10 @@ BUYER_AUTH_ERRORS.VERIFY_TOKEN_INVALID    // "VERIFY_TOKEN_INVALID"
 BUYER_AUTH_ERRORS.EMAIL_ALREADY_VERIFIED  // "EMAIL_ALREADY_VERIFIED"
 BUYER_AUTH_ERRORS.EMAIL_TAKEN             // "Email already registered in this store"
 BUYER_AUTH_ERRORS.MISSING_REQUIRED_FIELDS // "MISSING_REQUIRED_FIELDS"
+BUYER_AUTH_ERRORS.CAPTCHA_REQUIRED        // "CAPTCHA_REQUIRED" (Turnstile, HTTP 422)
 ```
+
+**Helper:** `isCaptchaRequiredError(err)` — detecta `{ status: 422, data.detail: CAPTCHA_REQUIRED }` en login, registro y forgot-password.
 
 ---
 

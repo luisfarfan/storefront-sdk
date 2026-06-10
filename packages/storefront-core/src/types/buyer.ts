@@ -12,7 +12,15 @@ export const BUYER_AUTH_ERRORS = {
   EMAIL_ALREADY_VERIFIED: "EMAIL_ALREADY_VERIFIED",
   EMAIL_TAKEN:            "Email already registered in this store",
   MISSING_REQUIRED_FIELDS: "MISSING_REQUIRED_FIELDS",
+  /** Turnstile enabled but captcha_token missing or invalid (HTTP 422). */
+  CAPTCHA_REQUIRED:       "CAPTCHA_REQUIRED",
 } as const;
+
+/** True when the API rejected auth because Turnstile verification failed or was omitted. */
+export function isCaptchaRequiredError(err: unknown): boolean {
+  const e = err as { status?: number; data?: { detail?: string } };
+  return e?.status === 422 && e?.data?.detail === BUYER_AUTH_ERRORS.CAPTCHA_REQUIRED;
+}
 
 // ---------------------------------------------------------------------------
 // Buyer Auth types
