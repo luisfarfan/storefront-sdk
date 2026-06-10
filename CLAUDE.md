@@ -317,7 +317,11 @@ Para tareas específicas, consulta los skills en `.claude/skills/`:
 - `validateCoupon(config, website, params)` — validar cupón antes del checkout
 
 ### Analytics
-- `analytics.init(config)` + `analytics.track(type, payload)` — cliente singleton con batch/flush
+- `analytics.init(config, { requireAnalyticsConsent })` + `analytics.track(type, payload)` — singleton, batch flush a `POST /api/v1/storefront/events` con `X-Business-ID` + `X-Session-ID`
+- `resolveAnalyticsSessionId(config)` — prioridad: SSR `sessionId` → cart cookie → `localStorage` (`pxa_analytics_session`)
+- `captureSessionAttribution()` / `getSessionAttribution()` — first-touch UTMs + `gclid`/`fbclid`/`msclkid`; merged en `payload.attribution` de cada evento
+- Cookie consent: `acceptAllCookieConsent()`, `rejectNonEssentialCookieConsent()`, `isAnalyticsConsentGranted()`, `onCookieConsentChanged()`
+- Doc canónica: `docs/13-analytics.md` · wiring storefront: `proxima-storefronts/apps/tech-store/docs/analytics.md`
 
 ### Campañas y countdown
 - `resolveCampaignTarget(attributesMeta, attrName)` → `string | null` — extrae el ISO UTC de un attr `datetime` desde `attributesMeta`

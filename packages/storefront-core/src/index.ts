@@ -46,6 +46,17 @@ export * from './campaign/countdown.js';
 
 export { analytics } from './analytics/analytics.js';
 export type { StorefrontAnalyticsInitOptions } from './analytics/analytics.js';
+export { resolveAnalyticsSessionId, ANALYTICS_SESSION_STORAGE_KEY } from './analytics/session.js';
+export {
+  captureSessionAttribution,
+  getSessionAttribution,
+  clearSessionAttribution,
+  inferAttributionFromReferrer,
+  ATTRIBUTION_STORAGE_KEY,
+} from './analytics/attribution.js';
+export type { SessionAttribution } from './analytics/attribution.js';
+export { createStorefrontAnalyticsTrackers } from './analytics/trackers.js';
+export type { StorefrontAnalyticsTrackers } from './analytics/trackers.js';
 
 export * from './cookie-consent/consent.js';
 

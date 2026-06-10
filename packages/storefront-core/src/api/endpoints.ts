@@ -78,6 +78,6 @@ export const StorefrontEndpoints = {
   },
 
   analytics: {
-    events: () => '/api/v1/store/events',
+    events: () => '/api/v1/storefront/events',
   },
 } as const;

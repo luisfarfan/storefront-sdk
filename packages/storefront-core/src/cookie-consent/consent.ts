@@ -41,6 +41,7 @@ export function hasCookieConsentDecision(): boolean {
   return readCookieConsent() !== null;
 }
 
+/** Whether analytics events may be sent (requires explicit accept). */
 export function isAnalyticsConsentGranted(state: CookieConsentState | null = readCookieConsent()): boolean {
   return state?.analytics === true;
 }
@@ -60,6 +61,7 @@ function buildState(analytics: boolean, marketing: boolean): CookieConsentState 
 }
 
 /** Persist consent and notify listeners (analytics gating, third-party tags). */
+/** Persist consent and dispatch `COOKIE_CONSENT_CHANGED_EVENT` (analytics client listens). */
 export function writeCookieConsent(categories: { analytics: boolean; marketing: boolean }): CookieConsentState {
   const state = buildState(categories.analytics, categories.marketing);
   if (isBrowser()) {
@@ -69,10 +71,12 @@ export function writeCookieConsent(categories: { analytics: boolean; marketing: 
   return state;
 }
 
+/** Accept analytics + marketing — call from cookie banner "Accept all". */
 export function acceptAllCookieConsent(): CookieConsentState {
   return writeCookieConsent({ analytics: true, marketing: true });
 }
 
+/** Reject non-essential cookies — analytics stays gated until user accepts. */
 export function rejectNonEssentialCookieConsent(): CookieConsentState {
   return writeCookieConsent({ analytics: false, marketing: false });
 }

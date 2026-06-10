@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/storefront-core",
-  "version": "0.7.2",
+  "version": "0.8.1",
   "type": "module",
   "description": "HTTP client for the Proxima API — website resolution, CMS composition, and product listing.",
   "license": "MIT",
