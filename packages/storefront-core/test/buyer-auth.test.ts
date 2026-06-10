@@ -8,6 +8,7 @@ import {
   registerBuyer,
   MissingFieldsError,
   BUYER_AUTH_ERRORS,
+  isCaptchaRequiredError,
   updateBuyerProfile,
   refreshBuyerToken,
   forgotPassword,
@@ -366,5 +367,26 @@ describe('removeFromWishlist', () => {
     await expect(
       removeFromWishlist(CONFIG, WEBSITE, { token: 'tok-abc', productId: 'ghost-id' })
     ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Captcha errors (Turnstile)
+// ---------------------------------------------------------------------------
+
+describe('isCaptchaRequiredError', () => {
+  it('returns true for 422 with CAPTCHA_REQUIRED detail', () => {
+    expect(
+      isCaptchaRequiredError({
+        status: 422,
+        data: { detail: BUYER_AUTH_ERRORS.CAPTCHA_REQUIRED },
+      })
+    ).toBe(true);
+  });
+
+  it('returns false for wrong status or detail', () => {
+    expect(isCaptchaRequiredError({ status: 401, data: { detail: BUYER_AUTH_ERRORS.CAPTCHA_REQUIRED } })).toBe(false);
+    expect(isCaptchaRequiredError({ status: 422, data: { detail: BUYER_AUTH_ERRORS.EMAIL_TAKEN } })).toBe(false);
+    expect(isCaptchaRequiredError(null)).toBe(false);
   });
 });

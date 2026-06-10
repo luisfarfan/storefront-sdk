@@ -2,6 +2,15 @@
 
 Datos dinámicos auto-resueltos en la composición. El comercio los configura; tú los renderizas.
 
+> **Nota:** este doc cubre la API canónica de SCs (tipos, envelope, render).
+> Para el envelope **runtime completo** (campos `meta.inactive`, `schedule`,
+> `applied_promotion` en items, linked-Promotion countdown) ver el doc
+> definitivo en [12-smart-collections.md](./12-smart-collections.md). Para
+> campañas (Promotions) que alimentan `applied_promotion` en los items, ver
+> [07-commerce.md](./07-commerce.md) § "Campañas y `applied_promotion`" y el
+> patrón completo en [04-sections-and-attributes.md](./04-sections-and-attributes.md)
+> § "Campaign auto-detect".
+
 ---
 
 ## ¿Qué es una Smart Collection?
