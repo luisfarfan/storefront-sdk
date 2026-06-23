@@ -12,6 +12,7 @@ interface Props {
   editorKind?: CmsEditorKind | string | null;
   as?: "div" | "span" | "p" | "h1" | "h2" | "h3" | "h4" | "section" | "article" | "a";
   class?: string;
+  style?: string;
   href?: string;
 }
 
@@ -26,6 +27,7 @@ const {
   editorKind = null,
   as = "div",
   class: className = "",
+  style,
   href,
 } = Astro.props;
 
@@ -52,6 +54,7 @@ const kindLabel = resolved.editorKindLabel;
 {enabled && key ? (
   <Tag
     class={className}
+    style={style}
     href={href}
     data-cms-attribute={key}
     data-cms-attribute-key={key}
@@ -67,7 +70,7 @@ const kindLabel = resolved.editorKindLabel;
     <slot />
   </Tag>
 ) : (
-  <Tag class={className} href={href}>
+  <Tag class={className} style={style} href={href}>
     <slot />
   </Tag>
 )}

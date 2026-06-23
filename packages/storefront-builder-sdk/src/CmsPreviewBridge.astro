@@ -38,7 +38,8 @@ const readyPayload = JSON.stringify({
       let previewMode = modeParam === 'navigate' || modeParam === 'edit' ? modeParam : 'edit';
 
       const COMPLEX_TYPES = ['array', 'object', 'smart_collection_id'];
-      const ATOMIC_TYPES = ['text', 'rich_text', 'image', 'video', 'boolean', 'number', 'color', 'url', 'date'];
+      const ATOMIC_TYPES = ['text', 'rich_text', 'image', 'video', 'boolean', 'number',
+                        'color', 'url', 'date', 'datetime', 'link', 'select'];
 
       const resolveOrigin = (value) => {
         if (!value) return null;
@@ -349,7 +350,9 @@ const readyPayload = JSON.stringify({
         if (!value || typeof value !== 'object') return false;
         const href = typeof value.href === 'string' ? value.href : null;
         const label = typeof value.label === 'string' ? value.label : null;
-        const isExternal = value.is_external === true || value.isExternal === true;
+        // Canonical `is_external`; honor legacy `target: '_blank'` blobs too.
+        const isExternal =
+          value.is_external === true || value.isExternal === true || value.target === '_blank';
         if (href && node.tagName === 'A') {
           node.setAttribute('href', href);
         }
@@ -359,8 +362,10 @@ const readyPayload = JSON.stringify({
         if (node.tagName === 'A') {
           if (isExternal) {
             node.setAttribute('target', '_blank');
+            node.setAttribute('rel', 'noopener noreferrer');
           } else {
             node.removeAttribute('target');
+            node.removeAttribute('rel');
           }
         }
         return Boolean(href || label);
@@ -509,6 +514,26 @@ const readyPayload = JSON.stringify({
         return href.startsWith('/') || href.startsWith(window.location.origin);
       };
 
+      const sendBooleanToggle = (effectiveAttributePayload, effectiveAttributeElement, itemPayload) => {
+        if (effectiveAttributePayload?.attributeType !== 'boolean') return;
+        const currentVal = effectiveAttributeElement?.dataset?.cmsDraftValue;
+        let current = currentVal === 'true' ? true : currentVal === 'false' ? false : null;
+        if (current === null && effectiveAttributeElement instanceof Element) {
+          const ariaPressed = effectiveAttributeElement.getAttribute('aria-pressed');
+          if (ariaPressed === 'true') current = true;
+          else if (ariaPressed === 'false') current = false;
+          else if (effectiveAttributeElement instanceof HTMLInputElement) current = effectiveAttributeElement.checked;
+        }
+        const toggled = current === null ? true : !current;
+        send('cms:inline-edit-commit', {
+          attributeKey: effectiveAttributePayload.attributeKey,
+          attributeType: 'boolean',
+          value: toggled,
+          itemIndex: itemPayload?.itemIndex ?? null,
+          parentAttributeKey: itemPayload?.parentAttributeKey ?? null,
+        });
+      };
+
       const onClick = (event) => {
         const target = event.target;
         if (!(target instanceof Element)) return;
@@ -577,6 +602,7 @@ const readyPayload = JSON.stringify({
                   ...effectiveAttributePayload,
                   ...positionPayload,
                 });
+                sendBooleanToggle(effectiveAttributePayload, effectiveAttributeElement, itemPayload);
               } else if (itemPayload?.itemType || itemPayload?.itemIndex != null || itemPayload?.itemKey) {
                 send('cms:select-item', {
                   ...payload,
@@ -615,6 +641,7 @@ const readyPayload = JSON.stringify({
             ...effectiveAttributePayload,
             ...positionPayload,
           });
+          sendBooleanToggle(effectiveAttributePayload, effectiveAttributeElement, itemPayload);
           return;
         }
 
@@ -854,8 +881,8 @@ const readyPayload = JSON.stringify({
           draftSupport: {
             supported: true,
             applyStrategy: 'dom-patch',
-            supportedAttributeTypes: ['text', 'rich_text', 'number', 'boolean', 'link', 'image'],
-            unsupportedAttributeTypes: ['object', 'array', 'smart_collection_id'],
+            supportedAttributeTypes: ['text', 'rich_text', 'number', 'boolean', 'link', 'image', 'select', 'url', 'date', 'datetime'],
+            unsupportedAttributeTypes: ['object', 'array', 'smart_collection_id', 'video'],
           },
         });
       };
