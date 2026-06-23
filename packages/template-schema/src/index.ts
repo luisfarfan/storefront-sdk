@@ -10,6 +10,7 @@ export const attributeTypes = [
   "boolean",
   "number",
   "datetime",
+  "url",
   "link",
   "object",
   "array",
