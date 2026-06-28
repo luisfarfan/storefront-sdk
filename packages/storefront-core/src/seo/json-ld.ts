@@ -1,4 +1,5 @@
 import type { BreadcrumbItem, JsonLdLocalBusinessMeta, JsonLdProductMeta, JsonLdWebsiteMeta } from '../types/seo.js';
+import { buildEnginePageUrl } from './engine-url.js';
 
 /**
  * Build a `WebSite` JSON-LD object.
@@ -55,10 +56,27 @@ export function buildOrganizationJsonLd(
  */
 export function buildProductJsonLd(
   product: JsonLdProductMeta,
-  website: { domain: string; currency: string }
+  website: { domain: string; currency: string },
+  options?: {
+    productUrl?: string;
+    locale?: string;
+    localizedPaths?: Record<string, string>;
+    defaultLocale?: string;
+  },
 ): Record<string, any> {
   const siteUrl = `https://${website.domain}`;
-  const productUrl = `${siteUrl}/producto/${product.slug}`;
+  const defaultLocale = options?.defaultLocale ?? 'es';
+  const productUrl =
+    options?.productUrl ??
+    (options?.localizedPaths && options.locale
+      ? buildEnginePageUrl(
+          website.domain,
+          options.locale,
+          options.localizedPaths,
+          { slug: product.slug },
+          defaultLocale,
+        )
+      : `${siteUrl}/producto/${product.slug}`);
 
   // Deduplicated image list: primary first, then extras
   const images = [

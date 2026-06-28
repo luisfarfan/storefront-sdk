@@ -188,6 +188,51 @@ const seo = buildPageSeo(composition.seo, website, website.locale, canonicalUrl)
 // seo.title, seo.description, seo.ogImage, seo.canonicalUrl, seo.robots, …
 ```
 
+### `buildCanonicalUrl` / `buildHreflangAlternates`
+
+Helpers for locale-prefix routing (default locale omits prefix; others use `/{locale}{path}`):
+
+```ts
+import { buildCanonicalUrl, buildHreflangAlternates } from "@proxima-io/storefront-core";
+
+const canonical = buildCanonicalUrl(website.domain, locale, "/catalogo", website.default_locale);
+const alternates = buildHreflangAlternates({
+  domain: website.domain,
+  localizedPaths: { es: "/catalogo", en: "/catalog" },
+  enabledLocales: website.enabled_locales,
+  defaultLocale: website.default_locale,
+});
+// → <link rel="canonical" /> + <link rel="alternate" hreflang="…" />
+```
+
+`fetchProximaRender` accepts optional `locale` — forwarded as `?locale=` and `Accept-Language`.
+
+### `buildEnginePageUrl` / `buildEnginePageHreflangAlternates`
+
+For engine pages (`product_detail`, `category_detail`, …) with `{slug}` templates:
+
+```ts
+import {
+  buildEnginePageHreflangAlternates,
+  buildEnginePageUrl,
+} from "@proxima-io/storefront-core";
+
+const paths = { es: "/producto/{slug}", en: "/product/{slug}" };
+const canonical = buildEnginePageUrl(domain, "en", paths, { slug: "g502" }, "es");
+// → https://shop.test/en/product/g502
+
+const alternates = buildEnginePageHreflangAlternates({
+  domain,
+  localizedPaths: paths,
+  enabledLocales: ["es", "en"],
+  defaultLocale: "es",
+  routeParams: { slug: "g502" },
+});
+```
+
+`generateSitemapXml` emits bilingual catalog URLs when `website.pages[]` includes
+`localized_paths` for `product_detail`, `category_detail`, and `brand_detail`.
+
 ### JSON-LD builders (schema.org)
 
 ```ts

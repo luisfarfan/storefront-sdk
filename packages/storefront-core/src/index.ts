@@ -18,6 +18,8 @@ export * from './types/cookie-consent.js';
 
 export * from './api/index.js';
 
+export * from './seo/hreflang.js';
+export * from './seo/engine-url.js';
 export * from './seo/page-seo.js';
 export * from './seo/json-ld.js';
 export * from './seo/sitemap.js';

@@ -133,12 +133,22 @@ export interface ProximaRenderPage {
   not_found: boolean;
 }
 
+export interface ProximaRenderPageSummary {
+  name: string;
+  path: string;
+  localized_paths?: Record<string, string>;
+  resolver_kind: string;
+  is_active: boolean;
+}
+
 export interface ProximaRenderWebsite {
   id: string;
   business_id: string;
   name: string;
   domain?: string | null;
   locale: string;
+  default_locale?: string;
+  enabled_locales?: string[];
   currency: string;
   delivery_mode?: string | null;
   website_kind?: string | null;
@@ -150,7 +160,7 @@ export interface ProximaRenderWebsite {
   twitter_handle?: string | null;
   capabilities?: Record<string, any>;
   animation_config?: Record<string, any>;
-  pages?: Array<{ name: string; path: string; resolver_kind: string; is_active: boolean }>;
+  pages?: ProximaRenderPageSummary[];
 }
 
 export interface StorefrontRegFormField {

@@ -65,7 +65,9 @@ Todas en `@proxima-io/storefront-core`:
 | `buildOrganizationJsonLd(website)` | JSON-LD `Organization` (requiere `logo_url`) |
 | `buildProductJsonLd(product, website)` | JSON-LD `Product` con `Offer`, precio, disponibilidad |
 | `buildBreadcrumbJsonLd(items, siteUrl)` | JSON-LD `BreadcrumbList` para cualquier página |
-| `generateSitemapXml(website, apiUrl)` | XML completo: content pages + categorías + marcas + productos |
+| `generateSitemapXml(website, apiUrl)` | XML completo: content pages (multilocale vía `localized_paths` + `enabled_locales`) + categorías + marcas + productos |
+| `buildCanonicalUrl(domain, locale, path, defaultLocale)` | URL absoluta canónica con prefijo de locale (default sin prefijo) |
+| `buildHreflangAlternates({ domain, localizedPaths, enabledLocales, defaultLocale })` | `<link rel="alternate" hreflang="…">` por locale + `x-default` |
 | `generateRobotsTxt(website)` | robots.txt con Disallow privados + Sitemap directive |
 | `notifyIndexNow(apiKey, siteUrl, urls)` | Ping directo a IndexNow para URLs específicas |
 

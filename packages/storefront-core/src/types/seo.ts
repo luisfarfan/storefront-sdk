@@ -91,8 +91,11 @@ export interface JsonLdLocalBusinessMeta {
 
 export interface SitemapWebsiteMeta {
   domain: string;
+  default_locale?: string;
+  enabled_locales?: string[];
   pages?: Array<{
     resolver_kind: string;
     path?: string | null;
+    localized_paths?: Record<string, string> | null;
   }> | null;
 }

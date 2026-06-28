@@ -173,6 +173,8 @@ export async function fetchProximaRender(
   config: Pick<ProximaApiConfig, 'baseUrl' | 'domain' | 'path' | 'serviceKey'> & {
     /** Override domain for dev/testing (maps to ?domain= query param). */
     host?: string;
+    /** Active locale for composition + SEO resolution. */
+    locale?: string;
   },
 ): Promise<ProximaRenderResponse> {
   const client = createStorefrontClient(config);
@@ -180,7 +182,9 @@ export async function fetchProximaRender(
     query: {
       path: config.path,
       domain: config.host ?? config.domain,
+      ...(config.locale ? { locale: config.locale } : {}),
     },
+    ...(config.locale ? { locale: config.locale } : {}),
     failPrefix: 'Render fetch failed',
   });
 }
