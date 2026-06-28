@@ -1,4 +1,10 @@
 import type { SitemapWebsiteMeta } from '../types/seo.js';
+import { buildCanonicalUrl } from './hreflang.js';
+import {
+  fillPathTemplate,
+  findWebsitePageByResolver,
+  slugFromCatalogHref,
+} from './engine-url.js';
 import {
   fetchBrandsDirectory,
   fetchCategoryNavTree,
@@ -83,15 +89,65 @@ export async function generateSitemapXml(
   const MAX_PAGES = Math.ceil(MAX_PRODUCTS / PAGE_SIZE);
   const TODAY = new Date().toISOString().split("T")[0];
   const siteUrl = `https://${website.domain}`;
+  const defaultLocale = website.default_locale ?? "es";
+  const enabledLocales = website.enabled_locales?.length
+    ? website.enabled_locales
+    : [defaultLocale];
   const entries: string[] = [];
+
+  function localizedTemplatesFor(
+    resolverKind: string,
+    fallbackTemplate: string,
+  ): Array<{ locale: string; template: string }> {
+    const page = findWebsitePageByResolver(website.pages, resolverKind);
+    const localizedPaths = page?.localized_paths ?? {};
+    const hasLocalized = Object.keys(localizedPaths).length > 0;
+
+    if (!hasLocalized) {
+      return [{ locale: defaultLocale, template: page?.path ?? fallbackTemplate }];
+    }
+
+    return enabledLocales
+      .map((locale) => ({
+        locale,
+        template: localizedPaths[locale] ?? localizedPaths[defaultLocale] ?? page?.path ?? fallbackTemplate,
+      }))
+      .filter((item) => Boolean(item.template));
+  }
+
+  function pushEngineUrls(
+    resolverKind: string,
+    fallbackTemplate: string,
+    slug: string,
+    priority: string,
+    changefreq: string,
+  ) {
+    for (const { locale, template } of localizedTemplatesFor(resolverKind, fallbackTemplate)) {
+      const logicalPath = template.includes('{')
+        ? fillPathTemplate(template, { slug })
+        : template;
+      const loc = buildCanonicalUrl(website.domain, locale, logicalPath, defaultLocale);
+      entries.push(_urlEntry(loc, priority, changefreq, TODAY));
+    }
+  }
 
   // 1. Content pages from the website manifest
   for (const page of website.pages ?? []) {
     if (SITEMAP_PRIVATE_KINDS.has(page.resolver_kind)) continue;
-    if (page.resolver_kind === "content_page" && page.path) {
-      const priority = page.path === "/" ? "1.0" : "0.8";
-      const changefreq = page.path === "/" ? "daily" : "weekly";
-      entries.push(_urlEntry(`${siteUrl}${page.path}`, priority, changefreq, TODAY));
+    if (page.resolver_kind !== "content_page") continue;
+
+    const localizedPaths = page.localized_paths ?? {};
+    const localesToEmit = Object.keys(localizedPaths).length > 0
+      ? enabledLocales.filter((locale) => localizedPaths[locale] || page.path)
+      : [defaultLocale];
+
+    for (const locale of localesToEmit) {
+      const path = localizedPaths[locale] ?? page.path;
+      if (!path) continue;
+      const priority = path === "/" ? "1.0" : "0.8";
+      const changefreq = path === "/" ? "daily" : "weekly";
+      const loc = buildCanonicalUrl(website.domain, locale, path, defaultLocale);
+      entries.push(_urlEntry(loc, priority, changefreq, TODAY));
     }
   }
 
@@ -100,7 +156,15 @@ export async function generateSitemapXml(
     const tree = await fetchCategoryNavTree({ baseUrl: apiUrl }, website as any);
     function collectHrefs(nodes: typeof tree.nodes) {
       for (const node of nodes) {
-        entries.push(_urlEntry(`${siteUrl}${node.href}`, "0.8", "daily", TODAY));
+        const slug =
+          slugFromCatalogHref(node.href, 'categoria') ??
+          slugFromCatalogHref(node.href, 'category') ??
+          node.href.split('/').filter(Boolean).pop();
+        if (slug) {
+          pushEngineUrls('category_detail', '/categoria/{slug}', slug, '0.8', 'daily');
+        } else {
+          entries.push(_urlEntry(`${siteUrl}${node.href}`, '0.8', 'daily', TODAY));
+        }
         if (node.children.length > 0) collectHrefs(node.children);
       }
     }
@@ -113,7 +177,15 @@ export async function generateSitemapXml(
   try {
     const brandsResult = await fetchBrandsDirectory({ baseUrl: apiUrl }, website as any);
     for (const brand of brandsResult.items) {
-      entries.push(_urlEntry(`${siteUrl}${brand.href}`, "0.7", "weekly", TODAY));
+      const slug =
+        slugFromCatalogHref(brand.href, 'marca') ??
+        slugFromCatalogHref(brand.href, 'brand') ??
+        brand.slug;
+      if (slug) {
+        pushEngineUrls('brand_detail', '/marca/{slug}', slug, '0.7', 'weekly');
+      } else {
+        entries.push(_urlEntry(`${siteUrl}${brand.href}`, '0.7', 'weekly', TODAY));
+      }
     }
   } catch {
     /* API offline — skip brand URLs */
@@ -129,7 +201,7 @@ export async function generateSitemapXml(
         pageSize: PAGE_SIZE,
       });
       for (const product of result.items) {
-        entries.push(_urlEntry(`${siteUrl}/producto/${product.slug}`, "0.9", "weekly", TODAY));
+        pushEngineUrls('product_detail', '/producto/{slug}', product.slug, '0.9', 'weekly');
       }
       totalPages = result.pagination.total_pages;
       currentPage++;

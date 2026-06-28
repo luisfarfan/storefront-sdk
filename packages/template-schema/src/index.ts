@@ -233,6 +233,7 @@ export const websiteDeployScaffoldSectionSchema = z.object({
 export const websiteDeployPageSchema = z.object({
   resolver_kind:     z.string().min(1),
   path:              z.string().optional(),
+  paths:             z.record(z.string()).optional(),
   label:             z.string().optional(),
   scaffold_sections: z.array(websiteDeployScaffoldSectionSchema).default([]),
 });
@@ -318,12 +319,53 @@ export const websiteDeployManifestSchema = z
 
     // Static pages (content_page) must have a path
     manifest.pages.forEach((page, pi) => {
-      if (page.resolver_kind === "content_page" && !page.path) {
+      if (page.resolver_kind === "content_page" && !page.path && !page.paths) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "pages with resolver_kind 'content_page' require a 'path' field",
+          message: "pages with resolver_kind 'content_page' require a 'path' or 'paths' field",
           path: ["pages", pi, "path"],
         });
+      }
+    });
+
+    const seenPaths = new Map<string, number>();
+    const ENGINE_RESOLVER_KINDS = new Set([
+      "product_list",
+      "product_detail",
+      "category_detail",
+      "brand_detail",
+      "search",
+      "buyer_search",
+    ]);
+
+    manifest.pages.forEach((page, pi) => {
+      const localized = page.paths ?? (page.path ? { _: page.path } : {});
+      for (const [locale, pagePath] of Object.entries(localized)) {
+        const key = `${locale}:${pagePath}`;
+        const previous = seenPaths.get(key);
+        if (previous !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `duplicate path '${pagePath}' for locale '${locale}' (also on pages[${previous}])`,
+            path: ["pages", pi, "paths", locale],
+          });
+        } else {
+          seenPaths.set(key, pi);
+        }
+      }
+
+      if (ENGINE_RESOLVER_KINDS.has(page.resolver_kind) && page.paths) {
+        const placeholders = Object.values(page.paths).map((path) =>
+          [...(path.match(/\{([^{}]+)\}/g) ?? [])].sort().join(","),
+        );
+        const unique = new Set(placeholders);
+        if (unique.size > 1) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `engine page '${page.resolver_kind}' paths must use the same placeholders in every locale`,
+            path: ["pages", pi, "paths"],
+          });
+        }
       }
     });
   });
