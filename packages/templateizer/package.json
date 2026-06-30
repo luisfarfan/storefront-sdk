@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/templateizer",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "CLI for managing Proxima website templates — scan, validate, register, deploy, publish, sync, and status.",
   "license": "MIT",

@@ -1,6 +1,6 @@
 {
   "name": "@proxima-io/cli",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "description": "Global CLI for Proxima storefronts — discover workspaces, deploy manifests, publish templates.",
   "license": "MIT",

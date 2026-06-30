@@ -19,6 +19,7 @@ export async function websiteDeployCommand(targetPath: string, argv: string[]): 
   const domain     = resolveVar(readFlag(argv, '--domain'),      'PROXIMA_DOMAIN',      creds.domain,      dotenv, 'PROXIMA_WEBSITE_DOMAIN');
   const dryRun     = argv.includes('--dry-run');
   const force      = argv.includes('--force');
+  const autoScaffold = argv.includes('--auto-scaffold');
   const skipPrompt = argv.includes('--yes') || argv.includes('-y') || isCI;
   const pageFilter = readFlagAll(argv, '--page');
 
@@ -112,7 +113,10 @@ export async function websiteDeployCommand(targetPath: string, argv: string[]): 
   const spinner = createSpinner(`Deploying to ${pc.cyan(domain)}`);
 
   const doDeploy = (withForce: boolean) =>
-    client.deploy(domain, { ...manifest, pages: pagesToDeploy }, { force: withForce });
+    client.deploy(domain, { ...manifest, pages: pagesToDeploy }, {
+      force: withForce,
+      autoScaffold,
+    });
 
   try {
     const result = await doDeploy(force).catch(async (err: unknown) => {

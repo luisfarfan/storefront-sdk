@@ -29,6 +29,34 @@ describe("website deploy manifest paths", () => {
     expect(result.success).toBe(true);
   });
 
+  it("preserves scaffold values and legacy default_values", () => {
+    const result = validateWebsiteDeployManifest({
+      ...baseManifest,
+      section_types: [
+        ...baseManifest.section_types,
+        { key: "commerce_view", label: "Commerce", attribute_schema: [] },
+      ],
+      pages: [
+        {
+          resolver_kind: "cart",
+          path: "/carrito",
+          label: "Carrito",
+          scaffold_sections: [
+            {
+              section_type: "commerce_view",
+              order: 1,
+              values: { heading: { es: "Tu carrito" } },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    const section = result.data?.pages[0]?.scaffold_sections?.[0];
+    expect(section?.values).toEqual({ heading: { es: "Tu carrito" } });
+  });
+
   it("rejects duplicate locale paths within manifest", () => {
     const result = validateWebsiteDeployManifest({
       ...baseManifest,

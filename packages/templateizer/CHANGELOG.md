@@ -1,5 +1,13 @@
 # @proxima-io/templateizer
 
+## 0.2.2
+
+### Patch Changes
+
+- `proxima deploy` adds `--auto-scaffold` flag (forwards to API `auto_scaffold` query param).
+- Updated dependencies
+  - @proxima-io/template-registry-client@0.2.1
+
 ## 0.2.1
 
 ### Patch Changes

@@ -1,5 +1,11 @@
 # @proxima-io/template-registry-client
 
+## 0.2.1
+
+### Patch Changes
+
+- `WebsiteDeployClient.deploy` accepts `autoScaffold` and sends `?auto_scaffold=true` on deploy.
+
 ## 0.2.0
 
 ### Minor Changes

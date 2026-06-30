@@ -35,9 +35,12 @@ export class WebsiteDeployClient {
   async deploy(
     domain: string,
     manifest: WebsiteDeployManifest,
-    options: { force?: boolean } = {},
+    options: { force?: boolean; autoScaffold?: boolean } = {},
   ): Promise<WebsiteDeployResult> {
-    const path = RegistryEndpoints.admin.websitesDeploy(options.force);
+    const path = RegistryEndpoints.admin.websitesDeploy({
+      force: options.force,
+      autoScaffold: options.autoScaffold,
+    });
     const response = await this.http.fetchRaw(path, {
       method: 'POST',
       headers: {

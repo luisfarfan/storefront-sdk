@@ -11,8 +11,13 @@ export const RegistryEndpoints = {
       `/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/structure`,
     templatePublish: (templateKey: string) =>
       `/api/v1/admin/cms/website-templates/${encodeURIComponent(templateKey)}/publish`,
-    websitesDeploy: (force?: boolean) =>
-      `/api/v1/admin/cms/websites/deploy${force ? '?force=true' : ''}`,
+    websitesDeploy: (options?: { force?: boolean; autoScaffold?: boolean }) => {
+      const params = new URLSearchParams();
+      if (options?.force) params.set('force', 'true');
+      if (options?.autoScaffold) params.set('auto_scaffold', 'true');
+      const query = params.toString();
+      return `/api/v1/admin/cms/websites/deploy${query ? `?${query}` : ''}`;
+    },
     websitesExport: (params: {
       websiteDomain: string;
       scope?: string;
